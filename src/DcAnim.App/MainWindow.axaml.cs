@@ -528,13 +528,24 @@ public sealed partial class MainWindow : Window
         int g = _engine.CurrentFrameIndex;
         if (_seqTarget == SeqTargetKind.Clip)
         {
-            var r = _seqResolved.FirstOrDefault(r => g >= r.StartFrame && g < r.StartFrame + r.OutputFrames);
             var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
+            // The overlay describes the SELECTED clip, so it must use that
+            // clip's own resolved segment. Using the playhead clip's segment
+            // with the selected clip's animation asked for source indexes
+            // valid for one animation but out of range for the other —
+            // a per-frame crash during multi-clip playback.
+            var r = clip is null
+                ? null
+                : _seqResolved.FirstOrDefault(r => r.Clip.Id == _seqTargetId);
             if (r is null || clip is null)
                 return;
+            // Only overlay while the playhead is inside the selected clip.
+            if (g < r.StartFrame || g >= r.StartFrame + r.OutputFrames)
+                return;
+            int local = g - r.StartFrame;
             var native = _nativeCache.Get(_loader!, clip.AnimationId,
-                SequenceTiming.SourceIndex(g - r.StartFrame, r.SourceFrames, r.OutputFrames), _doc.Project.Fps);
-            var t = clip.EvaluateAt(g - r.StartFrame);
+                SequenceTiming.SourceIndex(local, r.SourceFrames, r.OutputFrames), _doc.Project.Fps);
+            var t = clip.EvaluateAt(local);
             var (x, y, w, h) = TransformLayout.MapRect(native.Width, native.Height, t,
                 _seqRendered.Width, _seqRendered.Height);
             Viewport.Preview.SelectionRect = new Rect(x, y, w, h);

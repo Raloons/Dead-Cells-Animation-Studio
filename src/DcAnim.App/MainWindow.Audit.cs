@@ -739,6 +739,39 @@ public sealed partial class MainWindow
             RebuildSequence();
             AuditInvariants("keyframe-ui");
         });
+        AuditStep("overlay.cross-clip-selection", () =>
+        {
+            // Regression: with 2+ clips of different source lengths, keeping
+            // the SHORT clip selected while the playhead sat in the LONG
+            // clip's segment made the selection overlay request a source
+            // index valid for the long animation but out of range for the
+            // selected one — a per-frame crash during playback.
+            _doc.New("Overlay");
+            var clipA = _doc.AddClip("AtkKatanaA", 1.0);
+            var clipB = _doc.AddClip(B(), 1.0);
+            RebuildSequence();
+            var rA = _seqResolved.First(r => r.Clip.Id == clipA.Id);
+            var rB = _seqResolved.First(r => r.Clip.Id == clipB.Id);
+            AuditCheck(rA.SourceFrames != rB.SourceFrames, "clips have different source lengths");
+            // Select whichever clip is SHORTER and park the playhead in the
+            // LONGER clip's segment: SourceIndex from the long segment can
+            // exceed the short animation's frame count.
+            var (selR, hostR) = rA.SourceFrames <= rB.SourceFrames ? (rA, rB) : (rB, rA);
+            SelectSeqTarget(SeqTargetKind.Clip, selR.Clip.Id);
+            // Park the playhead on the LAST frame of the LONGER clip's
+            // segment: SourceIndex there returns SourceFrames-1 (the maximum),
+            // which is out of range for the shorter selected animation.
+            _engine.SeekFrame(hostR.StartFrame + hostR.OutputFrames - 1);
+            RefreshFrame();
+            // And sweep the tail during playback, as a real play would.
+            _engine.SeekFrame(hostR.StartFrame + Math.Max(0, hostR.OutputFrames - 6));
+            AuditTick(6); // would throw every frame before the fix
+            SelectSeqTarget(SeqTargetKind.Clip, hostR.Clip.Id);
+            _engine.SeekFrame(0);
+            RefreshFrame();
+            AuditTick(10);
+            AuditInvariants("overlay-cross");
+        });
         AuditStep("viewport.drag-doclevel", () =>
         {
             _doc.New("Drag");

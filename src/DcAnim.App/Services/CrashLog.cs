@@ -12,13 +12,22 @@ public static class CrashLog
 {
     public static string? LastPath { get; private set; }
 
+    // Storm guard: a per-frame failure (e.g. during playback) must never
+    // stack modal dialogs faster than the user can dismiss them.
+    private static readonly object _gate = new();
+    private static bool _showing;
+    private static DateTime _lastShownUtc = DateTime.MinValue;
+    private static readonly TimeSpan Cooldown = TimeSpan.FromSeconds(5);
+
     public static void Write(string source, Exception? ex)
     {
         try
         {
             string dir = Path.Combine(Path.GetTempPath(), "DeadCellsAnimationStudio");
             Directory.CreateDirectory(dir);
-            string path = Path.Combine(dir, $"crash-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+            // Millisecond resolution: per-frame storms must not overwrite
+            // each other's logs.
+            string path = Path.Combine(dir, $"crash-{DateTime.Now:yyyyMMdd-HHmmss-fff}.log");
             File.WriteAllText(path,
                 $"[{DateTime.Now:O}] {source}{Environment.NewLine}{ex}{Environment.NewLine}");
             LastPath = path;
@@ -29,8 +38,20 @@ public static class CrashLog
         }
     }
 
-    public static async Task ShowDialogAsync(Window owner, string logPath)
+    /// <summary>
+    /// Returns false when the dialog was suppressed by the storm guard
+    /// (already open, or shown within the cooldown). The log file is always
+    /// written regardless — use <see cref="LastPath"/> for the latest one.
+    /// </summary>
+    public static async Task<bool> ShowDialogAsync(Window owner, string logPath)
     {
+        lock (_gate)
+        {
+            if (_showing || DateTime.UtcNow - _lastShownUtc < Cooldown)
+                return false;
+            _showing = true;
+            _lastShownUtc = DateTime.UtcNow;
+        }
         try
         {
             var text = new TextBlock
@@ -53,10 +74,16 @@ public static class CrashLog
             };
             ok.Click += (_, _) => dialog.Close();
             await dialog.ShowDialog(owner);
+            return true;
         }
         catch
         {
             // Never fail while reporting failure.
+            return false;
+        }
+        finally
+        {
+            lock (_gate) { _showing = false; }
         }
     }
 }
