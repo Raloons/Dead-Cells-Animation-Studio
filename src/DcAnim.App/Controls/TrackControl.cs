@@ -40,6 +40,9 @@ public sealed class TrackControl : Control
     private static readonly IBrush CurrentBrush = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x3D));
     private static readonly IPen CurrentPen = new Pen(new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0xA5)), 1.5);
     private static readonly IBrush HitBrush = new SolidColorBrush(Color.FromRgb(0xC9, 0x97, 0x3F));
+    private static readonly IBrush MinorGridBrush = new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x27));
+    private static readonly IBrush MajorGridBrush = new SolidColorBrush(Color.FromRgb(0x31, 0x31, 0x38));
+    private static readonly IBrush LaneSeparatorBrush = new SolidColorBrush(Color.FromRgb(0x2C, 0x2C, 0x33));
     private static readonly IBrush TickBrush = new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x42));
     private static readonly IBrush TextBrush = new SolidColorBrush(Color.FromRgb(0x76, 0x76, 0x7F));
     private static readonly IPen PlayheadPen = new Pen(new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xEC)), 1.5);
@@ -105,6 +108,20 @@ public sealed class TrackControl : Control
             return;
         }
 
+        // Lattice grid across the full workspace width (including unused space):
+        // minor lines on frame boundaries, major lines on labeled intervals.
+        // Same mapping as cells/ruler/playhead, so everything stays aligned
+        // under zoom and horizontal scroll.
+        double fullWidth = Math.Max(Bounds.Width, TrackWidth);
+        var (minorLines, majorLines) = TimelineMath.GridLines(n, ppf, fullWidth, originX: 4);
+        foreach (double gx in minorLines)
+            context.FillRectangle(MinorGridBrush, new Rect(gx - 0.5, LaneTop, 1, LaneHeight));
+        foreach (double gx in majorLines)
+            context.FillRectangle(MajorGridBrush, new Rect(gx - 0.5, LaneTop, 1, LaneHeight));
+        // Lane separators across the full width (extensible to future tracks).
+        context.FillRectangle(LaneSeparatorBrush, new Rect(0, LaneTop, fullWidth, 1));
+        context.FillRectangle(LaneSeparatorBrush, new Rect(0, LaneTop + LaneHeight - 1, fullWidth, 1));
+
         // Ruler ticks + labels. Label gap accounts for "N · m:ss.mmm" text width
         // so labels never overlap at low zoom.
         int every = TimelineMath.LabelEvery(n, ppf, 88.0);
@@ -121,10 +138,7 @@ public sealed class TrackControl : Control
                     Typeface.Default, 10, TextBrush);
                 context.DrawText(label, new Point(x + 3, 6));
             }
-            // Frame boundary.
-            context.FillRectangle(TickBrush, new Rect(x - 0.5, LaneTop, 1, LaneHeight));
         }
-        context.FillRectangle(TickBrush, new Rect(4 + n * ppf - 0.5, LaneTop, 1, LaneHeight));
 
         // Frame cells with thumbnails.
         for (int i = 0; i < n; i++)

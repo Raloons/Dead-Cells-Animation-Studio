@@ -90,6 +90,32 @@ public sealed class WorkspaceLogicTests
     }
 
     [Fact]
+    public void TimelineMath_GridLines_AlignWithFrameMapping()
+    {
+        // 11 frames at 32 px: minors on every boundary from origin, majors on
+        // labeled intervals, covering the width including unused space.
+        var (minor, major) = TimelineMath.GridLines(11, 32.0, 400.0, originX: 4);
+        Assert.Equal(4, minor[0]);
+        for (int i = 1; i < minor.Length; i++)
+            Assert.Equal(32.0, minor[i] - minor[i - 1], precision: 9);
+        // Majors are a subset of minors, starting at frame 0.
+        Assert.Equal(minor[0], major[0]);
+        foreach (var m in major)
+            Assert.Contains(m, minor);
+        // Every minor maps back to its frame index.
+        for (int i = 0; i < 11; i++)
+            Assert.Equal(i, TimelineMath.FrameAtX(4 + i * 32.0 + 1, 11, 32.0));
+    }
+
+    [Fact]
+    public void TimelineMath_GridLines_EmptyForDegenerateInput()
+    {
+        Assert.Empty(TimelineMath.GridLines(0, 32.0, 400.0).Minor);
+        Assert.Empty(TimelineMath.GridLines(11, 0.0, 400.0).Minor);
+        Assert.Empty(TimelineMath.GridLines(11, 32.0, 0.0).Minor);
+    }
+
+    [Fact]
     public void TimelineMath_FormatTime()
     {
         Assert.Equal("0:00.000", TimelineMath.FormatTime(0, 30));

@@ -83,6 +83,8 @@ public sealed partial class MainWindow : Window
         _engine.Loop = true;
         _engine.FrameChanged += () => Dispatcher.UIThread.Post(RefreshFrame);
         _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Render, OnTick);
+        _toastTimer = new DispatcherTimer(TimeSpan.FromSeconds(6), DispatcherPriority.Background,
+            (_, _) => { if (_toastArmed) HideToast(); });
 
         Loaded += (_, _) => AutoLoad();
         Opened += (_, _) => _ = MaybeRunEvidenceModeAsync();
@@ -100,11 +102,12 @@ public sealed partial class MainWindow : Window
                 LoadFromResPak(resPak);
                 return;
             }
-            SetStatus("No Dead Cells installation found. Use File > Open res.pak… or open an extracted atlas folder.");
+            // Contextual feedback lives in the library's empty state.
+            Browser.Clear();
         }
         catch (Exception ex)
         {
-            SetStatus($"Auto-detect failed: {ex.Message}");
+            ShowToast($"Game auto-detect failed: {ex.Message}");
         }
     }
 
@@ -151,7 +154,6 @@ public sealed partial class MainWindow : Window
         Inspector.Clear();
         Timeline.Clear();
         SourceText.Text = loader.SourceDescription;
-        SetStatus($"Loaded: {loader.SourceDescription} — {loader.Catalog.Count} animations.");
         Browser.Select(_preferredAnimation);
     }
 
@@ -170,7 +172,9 @@ public sealed partial class MainWindow : Window
             if (done != _thumbNotified)
             {
                 _thumbNotified = done;
-                SetStatus($"Thumbnails {done} cached — {_loader.SourceDescription} — {_loader.Catalog.Count} animations.");
+                Browser.SetFooterStatus(done >= _loader.Catalog.Count
+                    ? $"{_loader.Catalog.Count} animations"
+                    : $"Loading previews… {done} / {_loader.Catalog.Count}");
             }
         });
     }
@@ -183,7 +187,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            SetStatus($"Failed to load '{resPakPath}': {ex.Message}");
+            ShowToast($"Could not open '{resPakPath}': {ex.Message}");
         }
     }
 
@@ -195,7 +199,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            SetStatus($"Failed to load '{directory}': {ex.Message}");
+            ShowToast($"Could not open '{directory}': {ex.Message}");
         }
     }
 
@@ -233,11 +237,10 @@ public sealed partial class MainWindow : Window
             Transport.SetEnabled(true);
             RefreshFrame();
             _preferredAnimation = id;
-            SetStatus($"Loaded: {_loader.SourceDescription} — {id} ({_clip.FrameCount} frames).");
         }
         catch (Exception ex)
         {
-            SetStatus($"Failed to load animation '{id}': {ex.Message}");
+            ShowToast($"Could not load animation '{id}': {ex.Message}");
         }
     }
 
@@ -327,7 +330,30 @@ public sealed partial class MainWindow : Window
         Transport.SetPlaying(_engine.IsPlaying);
     }
 
-    private void SetStatus(string message) => StatusText.Text = message;
+    private readonly DispatcherTimer _toastTimer;
+    private bool _toastArmed;
+
+    /// <summary>
+    /// Contextual error/notice feedback. The persistent status bar is gone;
+    /// routine state is visible in the browser and source label, so the toast
+    /// is reserved for problems that need attention and auto-dismisses.
+    /// </summary>
+    private void ShowToast(string message, int seconds = 6)
+    {
+        ToastText.Text = message;
+        Toast.IsVisible = true;
+        _toastTimer.Stop();
+        _toastTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(seconds, 2, 30));
+        _toastArmed = true;
+        _toastTimer.Start();
+    }
+
+    private void HideToast()
+    {
+        _toastTimer.Stop();
+        _toastArmed = false;
+        Toast.IsVisible = false;
+    }
 
     // ---------- menus / dialogs ----------
 
@@ -646,7 +672,7 @@ public sealed partial class MainWindow : Window
                 rtb.Render(this);
                 rtb.Save(Path.Combine(dir, "app-mainwindow.png"));
             }
-            SetStatus($"Evidence saved to {dir}");
+            // Evidence capture is verified by the output files themselves.
         }
         catch (Exception ex)
         {

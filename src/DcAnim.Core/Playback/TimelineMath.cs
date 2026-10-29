@@ -34,6 +34,33 @@ public static class TimelineMath
     public static double XForFrame(int frame, double pixelsPerFrame) =>
         Math.Max(0, frame) * pixelsPerFrame;
 
+    /// <summary>
+    /// Vertical grid-line positions for the timeline lattice. Minor lines sit
+    /// on every frame boundary; major lines sit on labeled intervals
+    /// (<see cref="LabelEvery"/>). Lines cover the full <paramref name="width"/>
+    /// (including unused space right of the animation) and scroll/zoom with
+    /// the track because they derive from the same frame mapping.
+    /// </summary>
+    public static (double[] Minor, double[] Major) GridLines(
+        int frameCount, double pixelsPerFrame, double width, double originX = 0, double minLabelGapPx = 88.0)
+    {
+        if (frameCount <= 0 || pixelsPerFrame <= 0 || width <= 0)
+            return (Array.Empty<double>(), Array.Empty<double>());
+        int last = (int)Math.Ceiling((width - originX) / pixelsPerFrame);
+        var minor = new List<double>(last + 1);
+        var major = new List<double>();
+        int every = LabelEvery(frameCount, pixelsPerFrame, minLabelGapPx);
+        for (int i = 0; i <= last; i++)
+        {
+            double x = originX + XForFrame(i, pixelsPerFrame);
+            if (x > width)
+                break;
+            minor.Add(x);
+            if (i % every == 0)
+                major.Add(x);
+        }
+        return (minor.ToArray(), major.ToArray());
+    }
     /// <summary>Ruler label interval (every Nth frame) so labels stay readable.</summary>
     public static int LabelEvery(int frameCount, double pixelsPerFrame, double minLabelGapPx = 48.0)
     {

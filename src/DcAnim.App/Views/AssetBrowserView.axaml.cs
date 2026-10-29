@@ -75,8 +75,12 @@ public sealed partial class AssetBrowserView : UserControl
     public void Clear()
     {
         _allItems.Clear();
+        StatusText.Text = string.Empty;
         ApplyFilter();
     }
+
+    /// <summary>Contextual footer line (e.g. thumbnail loading progress).</summary>
+    public void SetFooterStatus(string message) => StatusText.Text = message;
 
     /// <summary>
     /// Programmatic selection. Always routes through <see cref="RaiseSelected"/>

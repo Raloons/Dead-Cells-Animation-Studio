@@ -51,13 +51,6 @@
       </DockPanel>
     </Border>
 
-    <!-- Status bar: contextual loading/error state only -->
-    <Border DockPanel.Dock="Bottom" Background="{StaticResource WsPanelBackground}"
-            BorderBrush="{StaticResource WsBorder}" BorderThickness="0,1,0,0" Padding="10,5">
-      <TextBlock x:Name="StatusText" FontSize="11" Foreground="{StaticResource WsTextSecondary}"
-                 Text="Starting…" TextTrimming="CharacterEllipsis"/>
-    </Border>
-
     <!-- Workspace -->
     <Grid RowDefinitions="*,5,Auto">
       <Grid Grid.Row="0" x:Name="MainGrid">
@@ -80,14 +73,25 @@
                       HorizontalAlignment="Center" Background="Transparent"
                       ResizeBehavior="PreviousAndNext"/>
 
-        <DockPanel Grid.Column="2" Margin="12,10,12,8">
-          <Border DockPanel.Dock="Bottom" Background="{StaticResource WsPanelBackground}"
-                  BorderBrush="{StaticResource WsBorder}" BorderThickness="1" CornerRadius="8"
-                  Padding="8,6" Margin="0,8,0,0" HorizontalAlignment="Center">
-            <views:TransportControl x:Name="Transport"/>
+        <Grid Grid.Column="2" Margin="12,10,12,8">
+          <DockPanel>
+            <Border DockPanel.Dock="Bottom" Background="{StaticResource WsPanelBackground}"
+                    BorderBrush="{StaticResource WsBorder}" BorderThickness="1" CornerRadius="4"
+                    Padding="8,6" Margin="0,8,0,0" HorizontalAlignment="Center">
+              <views:TransportControl x:Name="Transport"/>
+            </Border>
+            <views:AnimationViewportView x:Name="Viewport"/>
+          </DockPanel>
+          <!-- Transient notification: loading errors only, auto-dismisses -->
+          <Border x:Name="Toast" IsVisible="False"
+                  HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,12,0,0"
+                  MaxWidth="560" Background="{StaticResource WsControlBackground}"
+                  BorderBrush="{StaticResource WsSelectedBorder}" BorderThickness="1"
+                  CornerRadius="4" Padding="10,8">
+            <TextBlock x:Name="ToastText" FontSize="12" Foreground="{StaticResource WsTextPrimary}"
+                       TextWrapping="Wrap"/>
           </Border>
-          <views:AnimationViewportView x:Name="Viewport"/>
-        </DockPanel>
+        </Grid>
 
         <GridSplitter Grid.Column="3" Width="5" VerticalAlignment="Stretch"
                       HorizontalAlignment="Center" Background="Transparent"
