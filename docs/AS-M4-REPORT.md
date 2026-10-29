@@ -70,8 +70,8 @@ never embedded). GIF keeps its documented quantization/timing behavior.
 
 ## 6. Verification
 
-- `dotnet build` + Release publish: 0 errors. `dotnet test`: **121/121**
-  (99 prior + 22: keyframes, transforms, layout math, undo/redo, v1/v2
+- `dotnet build` + Release publish: 0 errors. `dotnet test`: **122/122**
+  (99 prior + 23: keyframes, transforms, layout math, undo/redo, v1/v2
   round-trips, relinking, audio scheduling, composition, rendered parity).
 - Real app: opened Katana project, keyframed B2 motion, placed a generated
   shockwave at the B2 strike with scale/opacity keys, placed a generated
@@ -79,7 +79,10 @@ never embedded). GIF keeps its documented quantization/timing behavior.
   and redid them, saved, closed, reopened (all edits + references intact),
   exported PNG (72), GIF (72 frames, 30 ms), sheet (1218×1370 + metadata) —
   all decoded with an independent reader. Missing-asset toast path exercised
-  (screenshot shows it). Screenshots: `as-m4-sequence.png`,
+  (screenshot shows it). Fixed during verification: New Project on an empty
+  sequence no longer crashes (empty renders are rejected with a clear error;
+  the UI shows an empty state and every transport entry point is guarded),
+  plus an unclamped seek edge. Screenshots: `as-m4-sequence.png`,
   `as-m4-viewer.png`, `as-m4-combo.gif`, `as-m4-effect.png`.
 - Audio limitation (documented, not claimed): headless CI cannot verify
   audible output; scheduling/sync/voice-lifecycle are unit-tested and the

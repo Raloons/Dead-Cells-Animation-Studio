@@ -138,6 +138,18 @@ public sealed class CompositionTests
     }
 
     [Fact]
+    public void Compose_EmptyProjectHasNoFramesToRender()
+    {
+        using var fx = new Fixture();
+        var project = new SequenceProject { Name = "Empty", Fps = 30 };
+        Assert.Empty(SequenceComposer.Resolve(project, id => fx.Loader.Catalog.GetFrameRegions(id).Count));
+        // Rendering an empty sequence is meaningless: the composer refuses
+        // with a clear error so callers show an empty state instead of garbage.
+        Assert.Throws<InvalidDataException>(() =>
+            SequenceCompositor.Render(project, fx.Loader, fx.Native, fx.Effects, out _));
+    }
+
+    [Fact]
     public void Compose_MissingEffectIsSkipped()
     {
         using var fx = new Fixture();

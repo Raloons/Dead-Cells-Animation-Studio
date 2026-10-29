@@ -5,7 +5,7 @@
   "fps": 30,
   "clips": [
     {
-      "id": "b53f085a66ab4079b42c7b2f1ccef81c",
+      "id": "a05b5221afa34351af087ffc3fe16465",
       "animation": "AtkKatanaA",
       "speed": 1,
       "transform": {
@@ -23,7 +23,7 @@
       "keyframes": []
     },
     {
-      "id": "648f1f8fbc7e46a2b2bb80fca63f1aff",
+      "id": "7a3dde23eb1b48b2a1a8c8f900c4c87a",
       "animation": "AtkKatanaB2",
       "speed": 1,
       "transform": {
@@ -72,7 +72,7 @@
       ]
     },
     {
-      "id": "e49a9646ccfd40158802fc0177d0c04e",
+      "id": "adc803ee2b324a4ca6832fcaab62d2bf",
       "animation": "AtkKatanaB3",
       "speed": 0.5,
       "transform": {
@@ -90,7 +90,7 @@
       "keyframes": []
     },
     {
-      "id": "1414f58bb0814ad3b61c62e7fa5386fc",
+      "id": "c46a4763e32a4881bdfb49eb4a1160be",
       "animation": "AtkKatanaB4",
       "speed": 1.25,
       "transform": {
@@ -110,7 +110,7 @@
   ],
   "effects": [
     {
-      "id": "98d5debe514f4bc8942e2901acc03b84",
+      "id": "303b81419c8d49908f20a3439137e870",
       "name": "evidence-shockwave",
       "image": "as-m4-shockwave.png",
       "startFrame": 26,
@@ -170,7 +170,7 @@
   ],
   "audio": [
     {
-      "id": "73e0d8adada4440ab7fb00703b097286",
+      "id": "04aab17d161a4289af3fc0343fe1b744",
       "name": "evidence-tone",
       "file": "as-m4-tone.wav",
       "startSeconds": 0.5,

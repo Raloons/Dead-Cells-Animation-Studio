@@ -67,9 +67,9 @@ public sealed partial class MainWindow : Window
 
         Browser.AnimationSelected += SelectAnimation;
         Transport.PlayPauseRequested += TogglePlay;
-        Transport.FirstRequested += () => { _engine.SeekFrame(0); RefreshFrame(); };
-        Transport.PreviousRequested += () => { _engine.StepPrevious(); RefreshFrame(); };
-        Transport.NextRequested += () => { _engine.StepNext(); RefreshFrame(); };
+        Transport.FirstRequested += () => { if (CanTransport) { _engine.SeekFrame(0); RefreshFrame(); } };
+        Transport.PreviousRequested += () => { if (CanTransport) { _engine.StepPrevious(); RefreshFrame(); } };
+        Transport.NextRequested += () => { if (CanTransport) { _engine.StepNext(); RefreshFrame(); } };
         Transport.LastRequested += () =>
         {
             if (ActiveFrameCount > 0) { _engine.SeekFrame(ActiveFrameCount - 1); RefreshFrame(); }
@@ -81,7 +81,7 @@ public sealed partial class MainWindow : Window
         ViewerModeButton.IsCheckedChanged += (_, _) => { if (ViewerModeButton.IsChecked == true) SetSequenceMode(false); };
         SequenceModeButton.IsCheckedChanged += (_, _) => { if (SequenceModeButton.IsChecked == true) SetSequenceMode(true); };
 
-        Timeline.ScrubRequested += f => { _engine.Scrub(f); RefreshFrame(); };
+        Timeline.ScrubRequested += f => { if (CanTransport) { _engine.Scrub(f); RefreshFrame(); } };
         Timeline.SeqClipSelected += OnSeqClipSelected;
         Timeline.SeqClipMoved += (id, i) => { _doc.MoveClip(id, i); AfterStructuralEdit(); };
         Timeline.SeqLibraryDrop += (animId, i) => { var c = _doc.AddClip(animId, 1.0, i); _seqSelectedClip = c.Id; SelectSeqTarget(SeqTargetKind.Clip, c.Id, seekToStart: false); RebuildSequence(); };
@@ -142,9 +142,9 @@ public sealed partial class MainWindow : Window
         PlayPauseItem.Click += (_, _) => TogglePlay();
         UndoItem.Click += (_, _) => Undo();
         RedoItem.Click += (_, _) => Redo();
-        PrevFrameItem.Click += (_, _) => { _engine.StepPrevious(); RefreshFrame(); };
-        NextFrameItem.Click += (_, _) => { _engine.StepNext(); RefreshFrame(); };
-        FirstFrameItem.Click += (_, _) => { _engine.SeekFrame(0); RefreshFrame(); };
+        PrevFrameItem.Click += (_, _) => { if (CanTransport) { _engine.StepPrevious(); RefreshFrame(); } };
+        NextFrameItem.Click += (_, _) => { if (CanTransport) { _engine.StepNext(); RefreshFrame(); } };
+        FirstFrameItem.Click += (_, _) => { if (CanTransport) { _engine.SeekFrame(0); RefreshFrame(); } };
         LastFrameItem.Click += (_, _) =>
         {
             if (ActiveFrameCount > 0) { _engine.SeekFrame(ActiveFrameCount - 1); RefreshFrame(); }
@@ -360,9 +360,11 @@ public sealed partial class MainWindow : Window
         _frameCache.Clear();
     }
 
+    private bool CanTransport => ActiveFrameCount > 0;
+
     private void TogglePlay()
     {
-        if (ActiveClip is null)
+        if (!CanTransport)
             return;
         if (_engine.IsPlaying)
             _engine.Pause();
@@ -540,8 +542,11 @@ public sealed partial class MainWindow : Window
 
     private void UpdateSequenceSubtitle()
     {
-        if (_seqClip is null)
+        if (_seqClip is null || _seqClip.FrameCount == 0)
+        {
+            Viewport.SetTitle(_doc.Project.Name, "Empty sequence — drag animations from the library");
             return;
+        }
         int g = _engine.CurrentFrameIndex;
         var r = _seqResolved.FirstOrDefault(r =>
             g >= r.StartFrame && g < r.StartFrame + r.OutputFrames) ?? _seqResolved.LastOrDefault();
@@ -801,21 +806,21 @@ public sealed partial class MainWindow : Window
 
         switch (e.Key)
         {
-            case Key.Space when !onButton:
+            case Key.Space when !onButton && CanTransport:
                 TogglePlay();
                 e.Handled = true;
                 break;
-            case Key.Left:
+            case Key.Left when CanTransport:
                 _engine.StepPrevious();
                 RefreshFrame();
                 e.Handled = true;
                 break;
-            case Key.Right:
+            case Key.Right when CanTransport:
                 _engine.StepNext();
                 RefreshFrame();
                 e.Handled = true;
                 break;
-            case Key.Home:
+            case Key.Home when CanTransport:
                 _engine.SeekFrame(0);
                 RefreshFrame();
                 e.Handled = true;
@@ -925,7 +930,7 @@ public sealed partial class MainWindow : Window
         if (sequence)
         {
             RebuildSequence();
-            if (_seqClip is not null)
+            if (_seqClip is not null && _seqClip.FrameCount > 0)
             {
                 _engine.Load(_seqClip);
                 _engine.Pause();
@@ -996,8 +1001,18 @@ public sealed partial class MainWindow : Window
         int keepGlobal = _engine.CurrentFrameIndex;
         ClearSeqCache();
         _seqResolved = SequenceComposer.Resolve(_doc.Project, id => _loader.Catalog.GetFrameRegions(id).Count);
-        _seqRendered = SequenceCompositor.Render(_doc.Project, _loader, _nativeCache, _fxCache, out var resolved);
-        _seqResolved = resolved;
+        if (_seqResolved.Count == 0 || _seqResolved.Sum(r => r.OutputFrames) == 0)
+        {
+            // Empty sequence: nothing to render. Keep a 0-frame clip so the
+            // engine, timeline and inspector all see a valid empty state.
+            _seqRendered = new RenderedSequence(0, 0, Array.Empty<byte[]>());
+            _seqResolved = Array.Empty<ResolvedClip>();
+        }
+        else
+        {
+            _seqRendered = SequenceCompositor.Render(_doc.Project, _loader, _nativeCache, _fxCache, out var resolved);
+            _seqResolved = resolved;
+        }
 
         var frames = new List<ClipFrame>(_seqRendered.Frames.Count);
         for (int i = 0; i < _seqRendered.Frames.Count; i++)
@@ -1017,14 +1032,14 @@ public sealed partial class MainWindow : Window
         {
             Id = _doc.Project.Name,
             Frames = frames,
-            SourceDescription = $"Sequence '{_doc.Project.Name}' ({resolved.Count} clips, {frames.Count} frames @ {_doc.Project.Fps:0.#} FPS)",
+            SourceDescription = $"Sequence '{_doc.Project.Name}' ({_seqResolved.Count} clips, {frames.Count} frames @ {_doc.Project.Fps:0.#} FPS)",
             DefaultFps = _doc.Project.Fps,
         };
 
-        if (_seqSelectedClip is null || resolved.All(r => r.Clip.Id != _seqSelectedClip))
-            _seqSelectedClip = resolved.Count > 0 ? resolved[^1].Clip.Id : null;
-        if (selectLastAdded && resolved.Count > 0)
-            _seqSelectedClip = resolved[^1].Clip.Id;
+        if (_seqSelectedClip is null || _seqResolved.All(r => r.Clip.Id != _seqSelectedClip))
+            _seqSelectedClip = _seqResolved.Count > 0 ? _seqResolved[^1].Clip.Id : null;
+        if (selectLastAdded && _seqResolved.Count > 0)
+            _seqSelectedClip = _seqResolved[^1].Clip.Id;
         if (_seqTarget == SeqTargetKind.Clip && !_doc.Project.Clips.Any(c => c.Id == _seqTargetId))
             ClearSeqTarget();
 
@@ -1038,7 +1053,7 @@ public sealed partial class MainWindow : Window
             {
                 bool wasPlaying = _engine.IsPlaying;
                 _engine.Load(_seqClip);
-                _engine.SeekFrame(Math.Min(keepGlobal, _seqClip.FrameCount - 1));
+                _engine.SeekFrame(Math.Max(0, Math.Min(keepGlobal, _seqClip.FrameCount - 1)));
                 if (!wasPlaying)
                     _engine.Pause();
             }
@@ -1855,6 +1870,14 @@ public sealed partial class MainWindow : Window
     private async Task RunSequenceEvidenceAsync(string dir)
     {
         GenerateEvidenceAssets(dir, out string fxPath, out string wavPath);
+
+        // Empty-project path first: this must never crash (New Project with
+        // zero clips exercises the empty-sequence guards end to end).
+        _doc.New("Empty check");
+        SetSequenceMode(true);
+        TogglePlay();
+        RefreshFrame();
+        await Task.Delay(300);
 
         _doc.New("Katana Combo");
         _doc.AddClip("AtkKatanaA", 1.0);
