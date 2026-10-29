@@ -15,10 +15,20 @@
                      Foreground="{StaticResource WsTextPrimary}" VerticalAlignment="Center"/>
           <Menu VerticalAlignment="Center">
             <MenuItem Header="_File">
-              <MenuItem x:Name="OpenPakItem" Header="Open res.pak…" InputGesture="Ctrl+O"/>
+              <MenuItem x:Name="OpenPakItem" Header="Open game res.pak…"/>
               <MenuItem x:Name="OpenAtlasItem" Header="Open extracted atlas folder…"/>
               <Separator/>
-              <MenuItem x:Name="ReloadItem" Header="Reload source" InputGesture="F5"/>
+              <MenuItem x:Name="NewProjectItem" Header="New project" InputGesture="Ctrl+N"/>
+              <MenuItem x:Name="OpenProjectItem" Header="Open project…" InputGesture="Ctrl+O"/>
+              <MenuItem x:Name="SaveItem" Header="Save project" InputGesture="Ctrl+S"/>
+              <MenuItem x:Name="SaveAsItem" Header="Save project as…" InputGesture="Ctrl+Shift+S"/>
+              <MenuItem Header="Export sequence">
+                <MenuItem x:Name="ExportPngItem" Header="PNG frame sequence…"/>
+                <MenuItem x:Name="ExportGifItem" Header="Animated GIF…"/>
+                <MenuItem x:Name="ExportSheetItem" Header="Sprite sheet…"/>
+              </MenuItem>
+              <Separator/>
+              <MenuItem x:Name="ReloadItem" Header="Reload game source" InputGesture="F5"/>
               <Separator/>
               <MenuItem x:Name="ExitItem" Header="Exit" InputGesture="Alt+F4"/>
             </MenuItem>
@@ -45,9 +55,14 @@
             </MenuItem>
           </Menu>
         </StackPanel>
-        <TextBlock DockPanel.Dock="Right" x:Name="SourceText" FontSize="11"
-                   Foreground="{StaticResource WsTextMuted}" VerticalAlignment="Center"
-                   Text="No source"/>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+          <TextBlock x:Name="SourceText" FontSize="11" Foreground="{StaticResource WsTextMuted}"
+                     VerticalAlignment="Center" Text="No source" Margin="0,0,8,0"/>
+          <ToggleButton x:Name="ViewerModeButton" Classes="ws-tool" Content="Viewer" IsChecked="True"
+                        ToolTip.Tip="Inspect a single native animation"/>
+          <ToggleButton x:Name="SequenceModeButton" Classes="ws-tool" Content="Sequence"
+                        ToolTip.Tip="Edit a multi-clip sequence project"/>
+        </StackPanel>
       </DockPanel>
     </Border>
 
@@ -102,6 +117,7 @@
           <DockPanel>
             <TextBlock DockPanel.Dock="Top" Text="INSPECTOR" Classes="ws-panel-header"/>
             <views:AnimationInspectorView x:Name="Inspector"/>
+            <views:SequenceInspectorView x:Name="SeqInspector" IsVisible="False"/>
           </DockPanel>
         </Border>
       </Grid>

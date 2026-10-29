@@ -39,6 +39,9 @@ public sealed partial class TransportControl : UserControl
         };
     }
 
+    public IReadOnlyList<ComboBoxItem> FpsItems =>
+        FpsBox.Items.OfType<ComboBoxItem>().ToList();
+
     public void SetPlaying(bool playing)
     {
         if (Application.Current?.TryGetResource(playing ? "IconPause" : "IconPlay", null, out var icon) == true

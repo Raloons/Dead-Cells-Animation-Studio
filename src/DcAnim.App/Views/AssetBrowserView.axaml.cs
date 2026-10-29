@@ -1,8 +1,11 @@
 using System.ComponentModel;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
+using DcAnim.App.Services;
 using DcAnim.Core.Catalog;
 
 namespace DcAnim.App.Views;
@@ -62,6 +65,43 @@ public sealed partial class AssetBrowserView : UserControl
         ListViewButton.IsCheckedChanged += (_, _) => { if (!_viewSyncing && ListViewButton.IsChecked == true) SetGridMode(false); };
         GridViewButton.IsCheckedChanged += (_, _) => { if (!_viewSyncing && GridViewButton.IsChecked == true) SetGridMode(true); };
         BuildCategoryPills();
+        AnimationList.AddHandler(InputElement.PointerPressedEvent, OnListPointerPressed, RoutingStrategies.Tunnel);
+        AnimationList.AddHandler(InputElement.PointerMovedEvent, OnListPointerMoved, RoutingStrategies.Tunnel);
+        AnimationGrid.AddHandler(InputElement.PointerPressedEvent, OnListPointerPressed, RoutingStrategies.Tunnel);
+        AnimationGrid.AddHandler(InputElement.PointerMovedEvent, OnListPointerMoved, RoutingStrategies.Tunnel);
+    }
+
+    private Point? _dragStart;
+    private string? _dragId;
+
+    private void OnListPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        var props = e.GetCurrentPoint((Control)sender!).Properties;
+        if (!props.IsLeftButtonPressed)
+            return;
+        _dragStart = e.GetPosition((Control)sender!);
+        _dragId = (sender as ListBox)?.SelectedItem is AnimationListItem item ? item.Id : SelectedId;
+    }
+
+    private async void OnListPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_dragStart is null || _dragId is null || sender is not Control control)
+            return;
+        var props = e.GetCurrentPoint(control).Properties;
+        if (!props.IsLeftButtonPressed)
+        {
+            _dragStart = null;
+            return;
+        }
+        if ((e.GetPosition(control) - _dragStart.Value) is { X: var dx, Y: var dy } &&
+            dx * dx + dy * dy < 36)
+            return;
+        string id = _dragId;
+        _dragStart = null;
+        _dragId = null;
+        var data = new DataObject();
+        data.Set(AssetDnD.Format, id);
+        await DragDrop.DoDragDrop(e, data, DragDropEffects.Copy);
     }
 
     public void SetCatalog(IReadOnlyList<AnimationListItem> items)

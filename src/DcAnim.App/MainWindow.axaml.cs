@@ -7,10 +7,13 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using DcAnim.Core.Catalog;
+using DcAnim.Core.Export;
 using DcAnim.Core.Model;
 using DcAnim.Core.Playback;
+using DcAnim.Core.Sequence;
 using DcAnim.Core.Services;
 using DcAnim.Core.Sources;
+using DcAnim.App.Controls;
 using DcAnim.App.Services;
 using DcAnim.App.Views;
 
@@ -31,6 +34,18 @@ public sealed partial class MainWindow : Window
     private double _fps = 30.0;
     private int _thumbNotified;
 
+    // ---------- sequence editing state ----------
+    private readonly SequenceDocument _doc = new();
+    private bool _seqMode;
+    private AnimationClip? _seqClip;
+    private readonly List<WriteableBitmap> _seqBitmaps = new();
+    private IReadOnlyList<ResolvedClip> _seqResolved = Array.Empty<ResolvedClip>();
+    private string? _seqSelectedClip;
+    private bool _closingConfirmed;
+
+    private AnimationClip? ActiveClip => _seqMode ? _seqClip : _clip;
+    private int ActiveFrameCount => ActiveClip?.FrameCount ?? 0;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -44,16 +59,35 @@ public sealed partial class MainWindow : Window
         Transport.NextRequested += () => { _engine.StepNext(); RefreshFrame(); };
         Transport.LastRequested += () =>
         {
-            if (_clip is not null) { _engine.SeekFrame(_clip.FrameCount - 1); RefreshFrame(); }
+            if (ActiveFrameCount > 0) { _engine.SeekFrame(ActiveFrameCount - 1); RefreshFrame(); }
         };
         Transport.SpeedChanged += s => _engine.Speed = s;
-        Transport.FpsChanged += ApplyFps;
+        Transport.FpsChanged += ApplyFpsRouted;
         Transport.LoopChanged += loop => _engine.Loop = loop;
         Viewport.FitRequested += FitPreview;
+        ViewerModeButton.IsCheckedChanged += (_, _) => { if (ViewerModeButton.IsChecked == true) SetSequenceMode(false); };
+        SequenceModeButton.IsCheckedChanged += (_, _) => { if (SequenceModeButton.IsChecked == true) SetSequenceMode(true); };
+
         Timeline.ScrubRequested += f => { _engine.Scrub(f); RefreshFrame(); };
+        Timeline.SeqClipSelected += OnSeqClipSelected;
+        Timeline.SeqClipMoved += (id, i) => { _doc.MoveClip(id, i); RebuildSequence(); };
+        Timeline.SeqLibraryDrop += (animId, i) => { _doc.AddClip(animId, 1.0, i); RebuildSequence(selectLastAdded: true); };
+        Timeline.SeqRemoveRequested += id => { _doc.RemoveClip(id); RebuildSequence(); };
+        Timeline.SeqDuplicateRequested += id => { _doc.DuplicateClip(id); RebuildSequence(); };
+        Timeline.SeqSpeedRequested += (id, s) => { _doc.SetClipSpeed(id, s); RebuildSequence(); };
+        SeqInspector.ClipSpeedChanged += s => { if (_seqSelectedClip is { } id) { _doc.SetClipSpeed(id, s); RebuildSequence(); } };
+        SeqInspector.ProjectFpsChanged += f => { _doc.SetFps(f); RebuildSequence(); };
+        SeqInspector.ProjectRenamed += n => { _doc.Rename(n); UpdateTitle(); };
 
         OpenPakItem.Click += async (_, _) => await OpenPakAsync();
         OpenAtlasItem.Click += async (_, _) => await OpenAtlasFolderAsync();
+        NewProjectItem.Click += async (_, _) => await NewProjectAsync();
+        OpenProjectItem.Click += async (_, _) => await OpenProjectAsync();
+        SaveItem.Click += async (_, _) => await SaveProjectAsync();
+        SaveAsItem.Click += async (_, _) => await SaveProjectAsAsync();
+        ExportPngItem.Click += async (_, _) => await ExportAsync(ExportKind.PngSequence);
+        ExportGifItem.Click += async (_, _) => await ExportAsync(ExportKind.Gif);
+        ExportSheetItem.Click += async (_, _) => await ExportAsync(ExportKind.SpriteSheet);
         ReloadItem.Click += (_, _) => Reload();
         ExitItem.Click += (_, _) => Close();
         PlayPauseItem.Click += (_, _) => TogglePlay();
@@ -62,7 +96,7 @@ public sealed partial class MainWindow : Window
         FirstFrameItem.Click += (_, _) => { _engine.SeekFrame(0); RefreshFrame(); };
         LastFrameItem.Click += (_, _) =>
         {
-            if (_clip is not null) { _engine.SeekFrame(_clip.FrameCount - 1); RefreshFrame(); }
+            if (ActiveFrameCount > 0) { _engine.SeekFrame(ActiveFrameCount - 1); RefreshFrame(); }
         };
         CheckerItem.Click += (_, _) => Viewport.Preview.ShowChecker = CheckerItem.IsChecked;
         FitItem.Click += (_, _) => FitPreview();
@@ -74,11 +108,23 @@ public sealed partial class MainWindow : Window
         AboutItem.Click += async (_, _) => await ShowAboutAsync();
 
         KeyDown += OnKeyDown;
-        Closing += (_, _) =>
+        Closing += async (_, e) =>
         {
-            if (!IsEvidenceRun())
+            if (IsEvidenceRun() || _closingConfirmed)
+            {
+                if (!IsEvidenceRun())
+                    SaveSettings();
+                return;
+            }
+            e.Cancel = true;
+            if (await ConfirmDiscardAsync())
+            {
+                _closingConfirmed = true;
                 SaveSettings();
+                Close();
+            }
         };
+        _doc.Changed += UpdateTitle;
 
         _engine.Loop = true;
         _engine.FrameChanged += () => Dispatcher.UIThread.Post(RefreshFrame);
@@ -262,7 +308,7 @@ public sealed partial class MainWindow : Window
 
     private void TogglePlay()
     {
-        if (_clip is null)
+        if (ActiveClip is null)
             return;
         if (_engine.IsPlaying)
             _engine.Pause();
@@ -271,6 +317,19 @@ public sealed partial class MainWindow : Window
         _clock.Restart();
         _lastTickSeconds = 0;
         RefreshFrame();
+    }
+
+    private void ApplyFpsRouted(double fps)
+    {
+        if (fps <= 0)
+            return;
+        if (_seqMode)
+        {
+            _doc.SetFps(fps);
+            RebuildSequence();
+            return;
+        }
+        ApplyFps(fps);
     }
 
     private void ApplyFps(double fps)
@@ -292,15 +351,16 @@ public sealed partial class MainWindow : Window
 
     private void FitPreview()
     {
-        if (_clip is null || _clip.FrameCount == 0)
+        var clip = ActiveClip;
+        if (clip is null || clip.FrameCount == 0)
             return;
         Viewport.Preview.Pan = new Avalonia.Vector(0, 0);
-        Viewport.FitToView(_clip.Frames[0].Width, _clip.Frames[0].Height);
+        Viewport.FitToView(clip.Frames[0].Width, clip.Frames[0].Height);
     }
 
     private void OnTick(object? sender, EventArgs e)
     {
-        if (_clip is null || !_engine.IsPlaying)
+        if (ActiveClip is null || !_engine.IsPlaying)
             return;
         if (!_clock.IsRunning)
         {
@@ -316,18 +376,56 @@ public sealed partial class MainWindow : Window
 
     private void RefreshFrame()
     {
-        if (_clip is null)
+        var clip = ActiveClip;
+        if (clip is null)
         {
             Viewport.SetFrame(null);
             Transport.SetPlaying(false);
             return;
         }
         var frame = _engine.CurrentFrame;
-        if (frame is not null && _frameCache.TryGetValue(frame.RegionName, out var bmp))
-            Viewport.SetFrame(bmp);
-        Timeline.SetPosition(_engine.CurrentFrameIndex, _clip.FrameCount, _fps);
-        Inspector.SetPosition(_engine.CurrentFrameIndex, _clip.FrameCount, frame?.RegionName ?? "—");
+        if (frame is not null)
+        {
+            WriteableBitmap? bmp = null;
+            if (_seqMode)
+            {
+                int i = _engine.CurrentFrameIndex;
+                if ((uint)i < (uint)_seqBitmaps.Count)
+                    bmp = _seqBitmaps[i];
+            }
+            else if (_frameCache.TryGetValue(frame.RegionName, out var cached))
+            {
+                bmp = cached;
+            }
+            if (bmp is not null)
+                Viewport.SetFrame(bmp);
+        }
+        if (_seqMode)
+        {
+            Timeline.SetSequencePosition(_engine.CurrentFrameIndex, clip.FrameCount);
+            UpdateSequenceSubtitle();
+        }
+        else
+        {
+            Timeline.SetPosition(_engine.CurrentFrameIndex, clip.FrameCount, _fps);
+            Inspector.SetPosition(_engine.CurrentFrameIndex, clip.FrameCount, frame?.RegionName ?? "—");
+        }
         Transport.SetPlaying(_engine.IsPlaying);
+    }
+
+    private void UpdateSequenceSubtitle()
+    {
+        if (_seqClip is null)
+            return;
+        int g = _engine.CurrentFrameIndex;
+        var r = _seqResolved.FirstOrDefault(r =>
+            g >= r.StartFrame && g < r.StartFrame + r.OutputFrames) ?? _seqResolved.LastOrDefault();
+        if (r is null)
+            return;
+        int local = g - r.StartFrame + 1;
+        Viewport.SetTitle(_doc.Project.Name,
+            $"Clip {r.ClipIndex + 1}/{_seqResolved.Count} · {r.Clip.AnimationId} " +
+            $"frame {local}/{r.OutputFrames} · {r.Clip.Speed:0.##}× · {_seqClip.Frames[0].Width}×{_seqClip.Frames[0].Height} px · {_doc.Project.Fps:0.#} FPS");
     }
 
     private readonly DispatcherTimer _toastTimer;
@@ -419,12 +517,14 @@ public sealed partial class MainWindow : Window
             ("Space", "Play / pause"),
             ("← / →", "Previous / next frame"),
             ("Home / End", "First / last frame"),
+            ("Delete", "Remove selected clip (sequence)"),
             ("Ctrl+F", "Focus animation search"),
             ("Ctrl+0", "Fit preview to view"),
             ("Ctrl+B", "Toggle checkerboard background"),
-            ("Ctrl+O", "Open res.pak"),
+            ("Ctrl+N / Ctrl+O", "New / open project"),
+            ("Ctrl+S / Ctrl+Shift+S", "Save / save project as"),
             ("Ctrl + wheel", "Zoom timeline (over track)"),
-            ("F5", "Reload source"),
+            ("F5", "Reload game source"),
         };
         var grid = new Grid
         {
@@ -530,8 +630,20 @@ public sealed partial class MainWindow : Window
                     Viewport.Preview.ShowChecker = CheckerItem.IsChecked;
                     e.Handled = true;
                     break;
-                case Key.O:
-                    _ = OpenPakAsync();
+                case Key.O when e.KeyModifiers.HasFlag(KeyModifiers.Shift):
+                    _ = OpenProjectAsync();
+                    e.Handled = true;
+                    break;
+                case Key.N:
+                    _ = NewProjectAsync();
+                    e.Handled = true;
+                    break;
+                case Key.S when e.KeyModifiers.HasFlag(KeyModifiers.Shift):
+                    _ = SaveProjectAsAsync();
+                    e.Handled = true;
+                    break;
+                case Key.S:
+                    _ = SaveProjectAsync();
                     e.Handled = true;
                     break;
                 case Key.Add:
@@ -571,10 +683,18 @@ public sealed partial class MainWindow : Window
                 e.Handled = true;
                 break;
             case Key.End:
-                if (_clip is not null)
+                if (ActiveFrameCount > 0)
                 {
-                    _engine.SeekFrame(_clip.FrameCount - 1);
+                    _engine.SeekFrame(ActiveFrameCount - 1);
                     RefreshFrame();
+                    e.Handled = true;
+                }
+                break;
+            case Key.Delete:
+                if (_seqMode && _seqSelectedClip is { } doomed)
+                {
+                    _doc.RemoveClip(doomed);
+                    RebuildSequence();
                     e.Handled = true;
                 }
                 break;
@@ -635,10 +755,441 @@ public sealed partial class MainWindow : Window
         ApplySettings();
     }
 
+    // ---------- Viewer / Sequence mode ----------
+
+    private void SetSequenceMode(bool sequence)
+    {
+        if (_seqMode == sequence)
+        {
+            SyncModeButtons();
+            return;
+        }
+        if (sequence && _loader is null)
+        {
+            ShowToast("Open a game source first (File > Open game res.pak…), then build a sequence.");
+            SyncModeButtons();
+            return;
+        }
+        _seqMode = sequence;
+        SyncModeButtons();
+        Inspector.IsVisible = !sequence;
+        SeqInspector.IsVisible = sequence;
+        SyncTransportFps();
+        Timeline.SetSequenceMode(sequence);
+        Transport.SetEnabled(sequence ? _seqClip?.FrameCount > 0 : _clip is not null);
+        if (sequence)
+        {
+            RebuildSequence();
+            if (_seqClip is not null)
+            {
+                _engine.Load(_seqClip);
+                _engine.Pause();
+            }
+            else
+            {
+                _engine.Unload();
+            }
+        }
+        else if (_clip is not null)
+        {
+            _engine.Load(_clip);
+            _engine.Pause();
+        }
+        else
+        {
+            _engine.Unload();
+        }
+        UpdateTitle();
+        RefreshFrame();
+    }
+
+    private void SyncModeButtons()
+    {
+        ViewerModeButton.IsChecked = !_seqMode;
+        SequenceModeButton.IsChecked = _seqMode;
+    }
+
+    private void SyncTransportFps()
+    {
+        double target = _seqMode ? _doc.Project.Fps : _fps;
+        foreach (var item in Transport.FpsItems)
+        {
+            if (item.Tag?.ToString() is { } tag && double.TryParse(tag, out double v) &&
+                Math.Abs(v - target) < 1e-9)
+            {
+                Transport.FpsBox.SelectedItem = item;
+                return;
+            }
+        }
+    }
+
+    private void UpdateTitle() =>
+        Title = _seqMode
+            ? $"{_doc.DisplayName} — Dead Cells Animation Studio"
+            : "Dead Cells Animation Studio";
+
+    // ---------- sequence building ----------
+
+    private void ClearSeqCache()
+    {
+        foreach (var bmp in _seqBitmaps)
+            bmp.Dispose();
+        _seqBitmaps.Clear();
+    }
+
+    /// <summary>
+    /// Recomposes the virtual sequence clip from the project and refreshes
+    /// every sequence surface (timeline, inspector, viewport, engine).
+    /// Preview and exporters share these exact frames.
+    /// </summary>
+    private void RebuildSequence(bool selectLastAdded = false)
+    {
+        if (_loader is null)
+            return;
+        var missing = ProjectSerializer.ValidateAnimations(_doc.Project, id => _loader.Catalog.Contains(id));
+        if (missing.MissingAnimationIds.Count > 0)
+        {
+            ShowToast("Missing animations (skipped in playback/exports): " +
+                string.Join(", ", missing.MissingAnimationIds.Take(5)) +
+                (missing.MissingAnimationIds.Count > 5 ? $" +{missing.MissingAnimationIds.Count - 5} more" : string.Empty));
+        }
+
+        int keepGlobal = _engine.CurrentFrameIndex;
+        ClearSeqCache();
+        var (clip, resolved) = SequenceComposer.Compose(_doc.Project, _loader);
+        _seqClip = clip;
+        _seqResolved = resolved;
+        foreach (var f in clip.Frames)
+            _seqBitmaps.Add(FrameBitmap.ToWriteableBitmap(f));
+
+        if (_seqSelectedClip is null || resolved.All(r => r.Clip.Id != _seqSelectedClip))
+            _seqSelectedClip = resolved.Count > 0 ? resolved[^1].Clip.Id : null;
+        if (selectLastAdded && resolved.Count > 0)
+            _seqSelectedClip = resolved[^1].Clip.Id;
+
+        Timeline.SetSequenceData(BuildBlocks(), _seqSelectedClip,
+            Math.Min(keepGlobal, Math.Max(0, clip.FrameCount - 1)), _doc.Project.Fps);
+        UpdateSeqInspector();
+        Transport.SetEnabled(clip.FrameCount > 0);
+
+        if (_seqMode)
+        {
+            if (clip.FrameCount > 0)
+            {
+                bool wasPlaying = _engine.IsPlaying;
+                _engine.Load(clip);
+                _engine.SeekFrame(Math.Min(keepGlobal, clip.FrameCount - 1));
+                if (!wasPlaying)
+                    _engine.Pause();
+            }
+            else
+            {
+                _engine.Unload();
+            }
+            UpdateTitle();
+            RefreshFrame();
+        }
+    }
+
+    private IList<SequenceTrackControl.ClipBlock> BuildBlocks()
+    {
+        var blocks = new List<SequenceTrackControl.ClipBlock>();
+        foreach (var r in _seqResolved)
+        {
+            var thumbs = new List<Bitmap>();
+            if (_seqBitmaps.Count > 0)
+            {
+                int[] picks = { r.StartFrame, r.StartFrame + r.OutputFrames / 2, r.StartFrame + r.OutputFrames - 1 };
+                foreach (int g in picks.Distinct())
+                {
+                    if ((uint)g < (uint)_seqBitmaps.Count)
+                        thumbs.Add(_seqBitmaps[g]);
+                }
+            }
+            blocks.Add(new SequenceTrackControl.ClipBlock(
+                r.Clip.Id, r.Clip.AnimationId, r.StartFrame, r.OutputFrames, thumbs));
+        }
+        return blocks;
+    }
+
+    private void OnSeqClipSelected(string clipId)
+    {
+        _seqSelectedClip = clipId;
+        var r = _seqResolved.FirstOrDefault(r => r.Clip.Id == clipId);
+        if (r is not null)
+        {
+            _engine.SeekFrame(r.StartFrame);
+            Timeline.SetSequencePosition(r.StartFrame, _seqClip?.FrameCount ?? 0);
+        }
+        UpdateSeqInspector();
+        RefreshFrame();
+    }
+
+    private void UpdateSeqInspector()
+    {
+        var r = _seqResolved.FirstOrDefault(r => r.Clip.Id == _seqSelectedClip);
+        if (r is not null)
+            SeqInspector.ShowClip(r.Clip.AnimationId, r.Clip.Speed, r.OutputFrames, _doc.Project.Fps);
+        else
+            SeqInspector.Clear();
+        SeqInspector.ShowProject(_doc.Project.Name, _doc.Project.Fps,
+            _seqResolved.Count, _seqClip?.FrameCount ?? 0);
+    }
+
+    // ---------- project persistence ----------
+
+    private async Task<bool> ConfirmDiscardAsync()
+    {
+        if (!_doc.IsDirty)
+            return true;
+        var dialog = new Window
+        {
+            Title = "Unsaved changes",
+            Width = 400,
+            Height = 180,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+        };
+        var tcs = new TaskCompletionSource<bool>();
+        var save = new Button { Content = "Save", MinWidth = 90 };
+        var noSave = new Button { Content = "Don't Save", MinWidth = 90 };
+        var cancel = new Button { Content = "Cancel", MinWidth = 90 };
+        save.Click += async (_, _) => { dialog.Close(); tcs.TrySetResult(await SaveProjectAsync()); };
+        noSave.Click += (_, _) => { dialog.Close(); tcs.TrySetResult(true); };
+        cancel.Click += (_, _) => { dialog.Close(); tcs.TrySetResult(false); };
+        dialog.Content = new StackPanel
+        {
+            Spacing = 12,
+            Margin = new Thickness(16),
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = $"Project '{_doc.Project.Name}' has unsaved changes. Save before continuing?",
+                    TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                },
+                new StackPanel
+                {
+                    Orientation = Avalonia.Layout.Orientation.Horizontal,
+                    Spacing = 8,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                    Children = { save, noSave, cancel },
+                },
+            },
+        };
+        _ = dialog.ShowDialog(this);
+        return await tcs.Task;
+    }
+
+    private async Task NewProjectAsync()
+    {
+        if (_loader is null)
+        {
+            ShowToast("Open a game source first (File > Open game res.pak…), then start a project.");
+            return;
+        }
+        if (!await ConfirmDiscardAsync())
+            return;
+        _doc.New();
+        _seqSelectedClip = null;
+        SetSequenceMode(true);
+        RebuildSequence();
+    }
+
+    private async Task OpenProjectAsync()
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.StorageProvider is not { } provider)
+            return;
+        if (!await ConfirmDiscardAsync())
+            return;
+        var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Open animation project",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { new FilePickerFileType("Animation Studio project") { Patterns = new[] { "*.dcanim" } } },
+        });
+        if (files.Count == 0)
+            return;
+        await OpenProjectFileAsync(files[0].Path.LocalPath);
+    }
+
+    private async Task OpenProjectFileAsync(string path)
+    {
+        try
+        {
+            var project = ProjectSerializer.Load(path);
+            if (_loader is null)
+            {
+                ShowToast("Open a game source first — the project only stores references, not artwork.");
+                return;
+            }
+            var missing = ProjectSerializer.ValidateAnimations(project, id => _loader.Catalog.Contains(id));
+            _doc.Load(project, path);
+            _seqSelectedClip = null;
+            SetSequenceMode(true);
+            RebuildSequence();
+            if (missing.MissingAnimationIds.Count > 0)
+                ShowToast("Project references missing animations (check game version): " +
+                    string.Join(", ", missing.MissingAnimationIds.Take(5)));
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Could not open project: {ex.Message}");
+            await Task.CompletedTask;
+        }
+    }
+
+    private async Task<bool> SaveProjectAsync()
+    {
+        if (_doc.FilePath is null)
+            return await SaveProjectAsAsync();
+        try
+        {
+            ProjectSerializer.Save(_doc.Project, _doc.FilePath);
+            _doc.MarkSaved(_doc.FilePath);
+            UpdateTitle();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Could not save project: {ex.Message}");
+            return false;
+        }
+    }
+
+    private async Task<bool> SaveProjectAsAsync()
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.StorageProvider is not { } provider)
+            return false;
+        var file = await provider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Save animation project",
+            SuggestedFileName = $"{_doc.Project.Name}.dcanim",
+            FileTypeChoices = new[] { new FilePickerFileType("Animation Studio project") { Patterns = new[] { "*.dcanim" } } },
+        });
+        if (file is null)
+            return false;
+        try
+        {
+            ProjectSerializer.Save(_doc.Project, file.Path.LocalPath);
+            _doc.MarkSaved(file.Path.LocalPath);
+            UpdateTitle();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Could not save project: {ex.Message}");
+            return false;
+        }
+    }
+
+    // ---------- export ----------
+
+    private async Task ExportAsync(ExportKind kind)
+    {
+        if (_loader is null)
+        {
+            ShowToast("Open a game source first.");
+            return;
+        }
+        if (_seqClip is null || _seqClip.FrameCount == 0)
+        {
+            // Build on demand so export reflects the current project.
+            RebuildSequence();
+        }
+        if (_seqClip is null || _seqClip.FrameCount == 0)
+        {
+            ShowToast("Add clips to the sequence first (drag animations from the library).");
+            return;
+        }
+
+        var dialog = new ExportDialog(kind, _seqClip.FrameCount, _doc.Project.Fps);
+        _ = dialog.ShowDialog(this);
+        var settings = await dialog.WaitForSettingsAsync();
+        if (settings is null)
+            return;
+
+        var progress = new Progress<ExportProgress>(p =>
+            Dispatcher.UIThread.Post(() => dialog.ReportProgress(p.Fraction, p.Message)));
+        try
+        {
+            switch (settings.Kind)
+            {
+                case ExportKind.PngSequence:
+                    await Task.Run(() => PngSequenceExporter.Export(
+                        _seqClip.Frames, settings.Destination, settings.Overwrite, progress));
+                    dialog.ReportDone($"Exported {_seqClip.FrameCount} PNG frames to {settings.Destination}");
+                    break;
+                case ExportKind.Gif:
+                    GifExporter.GifExportInfo info = default!;
+                    await Task.Run(() => info = GifExporter.Export(
+                        _seqClip.Frames, _doc.Project.Fps, settings.Destination,
+                        settings.GifLoop, settings.Overwrite, progress));
+                    dialog.ReportDone(
+                        $"Exported GIF ({info.FrameCount} frames, {info.EffectiveFps:0.#} FPS effective, " +
+                        $"loop {(info.Loop ? "on" : "off")}) to {info.Path}");
+                    break;
+                case ExportKind.SpriteSheet:
+                    SpriteSheetExporter.SheetInfo sheet = default!;
+                    string meta = System.IO.Path.ChangeExtension(settings.Destination, ".json");
+                    await Task.Run(() => sheet = SpriteSheetExporter.Export(
+                        _seqClip.Frames, _seqResolved, _doc.Project.Fps,
+                        settings.Destination, meta, settings.SheetColumns,
+                        settings.SheetPadding, settings.Overwrite, progress));
+                    dialog.ReportDone(
+                        $"Exported {sheet.ImageWidth}×{sheet.ImageHeight} sheet + metadata to {System.IO.Path.GetDirectoryName(settings.Destination)}");
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            dialog.ReportError($"Export failed: {ex.Message}");
+        }
+    }
+
     // ---------- evidence mode ----------
 
     private static bool IsEvidenceRun() =>
         Array.IndexOf(Environment.GetCommandLineArgs(), "--evidence") >= 0;
+
+    /// <summary>
+    /// Builds the canonical Katana evidence sequence, saves + reopens the
+    /// project, and exports PNG/GIF/sheet — exercising the full AS-M3 loop
+    /// in the real app. Outputs are verified externally (docs/AS-M3-REPORT).
+    /// </summary>
+    private async Task RunSequenceEvidenceAsync(string dir)
+    {
+        _doc.New("Katana Combo");
+        _doc.AddClip("AtkKatanaA", 1.0);
+        _doc.AddClip("AtkKatanaB2", 1.0);
+        _doc.AddClip("AtkKatanaB3", 0.5);
+        _doc.AddClip("AtkKatanaB4", 1.25);
+        SetSequenceMode(true);
+        await Task.Delay(400);
+        // Select the second clip to show clip selection + inspector state.
+        var second = _seqResolved.Skip(1).FirstOrDefault();
+        if (second is not null)
+            OnSeqClipSelected(second.Clip.Id);
+
+        string projectPath = Path.Combine(dir, "katana-combo.dcanim");
+        ProjectSerializer.Save(_doc.Project, projectPath);
+        _doc.MarkSaved(projectPath);
+        UpdateTitle();
+
+        // Round-trip: reopen the saved file through the real loader path.
+        _doc.New();
+        await OpenProjectFileAsync(projectPath);
+
+        var frames = _seqClip?.Frames ?? throw new InvalidOperationException("Sequence compose failed.");
+        string pngDir = Path.Combine(dir, "png");
+        PngSequenceExporter.Export(frames, pngDir, overwrite: true);
+        GifExporter.Export(frames, _doc.Project.Fps, Path.Combine(dir, "combo.gif"), loop: true, overwrite: true);
+        SpriteSheetExporter.Export(frames, _seqResolved, _doc.Project.Fps,
+            Path.Combine(dir, "sheet.png"), Path.Combine(dir, "sheet.json"),
+            columns: 8, padding: 2, overwrite: true);
+        await Task.CompletedTask;
+    }
 
     private async Task MaybeRunEvidenceModeAsync()
     {
@@ -662,6 +1213,8 @@ public sealed partial class MainWindow : Window
             if (tl >= 0 && tl + 1 < args.Length && double.TryParse(args[tl + 1], out double tlz))
                 Timeline.SetZoomFactor(tlz);
             await Task.Delay(3500); // let background thumbnail prefetch land
+            if (args.Contains("--sequence"))
+                await RunSequenceEvidenceAsync(dir);
             TogglePlay(); // capture mid-playback: Pause icon + advanced frame
             await Task.Delay(900);
             RefreshFrame();

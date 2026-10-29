@@ -1,0 +1,28 @@
+{
+  "format": "dcanim",
+  "version": 1,
+  "name": "Katana Combo",
+  "fps": 30,
+  "clips": [
+    {
+      "id": "74a471f70c51429080e6b3c41112ecb2",
+      "animation": "AtkKatanaA",
+      "speed": 1
+    },
+    {
+      "id": "03fe0334e0b64fb481bbab1b8ce6f531",
+      "animation": "AtkKatanaB2",
+      "speed": 1
+    },
+    {
+      "id": "75cd898f1c17470fa07d0187fba81ae5",
+      "animation": "AtkKatanaB3",
+      "speed": 0.5
+    },
+    {
+      "id": "a1282625cff747e39c6b4b4a46550f42",
+      "animation": "AtkKatanaB4",
+      "speed": 1.25
+    }
+  ]
+}

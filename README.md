@@ -45,42 +45,44 @@ Evidence capture (used for the screenshots above):
 dotnet run --project src/DcAnim.App -- --evidence <output-dir>
 ```
 
-## What works (AS-M2 workspace)
+## What works (AS-M3 sequencing editor)
 
-- CapCut-inspired layout: top bar, resizable library / viewport / inspector,
-  professional filmstrip timeline (ruler, playhead, hit marker, zoom, scrub)
-- Native library: 572 hero animations with search, categories
-  (Attacks 388 · Movement 31 · Idle 50 · Other 103), list/grid views, lazy
-  thumbnails
-- Genuine frame playback: play / pause / restart / first / prev / next /
-  last, loop, timeline scrubbing, 0.25x–4x speed, 12–60 FPS, 1–8x zoom,
-  fit-to-view, pan, checkerboard toggle
-- Inspector: Animation / Timing / Source sections; CDB-derived timing overlay
-  for the verified Katana links
-- Keyboard shortcuts, tooltips, loading/empty/error states, persisted
-  workspace layout
+- Viewer mode (native inspection, unchanged) + Sequence mode toggle.
+- Sequence projects (`.dcanim` JSON): ordered clips, per-clip speed
+  (0.25–4x + presets), project FPS, deterministic integer-frame timing.
+- Timeline editing: drag from library to append/insert, drag-reorder,
+  select, duplicate, remove (menu + Delete), context speed menu.
+- New / Open / Save / Save As with native dialogs, shortcuts, unsaved
+  indicator + discard prompt; projects reopen without loss.
+- Exports: transparent PNG sequence, animated GIF (documented timing +
+  palette behavior), sprite sheet PNG + JSON metadata — all matching the
+  editor preview frame-for-frame.
+- 99 automated tests green, including round-trip, timing, scrub/loop, and
+  export-decoding tests.
 
-![AS-M2.2 neutral workspace at 1920x1080](docs/evidence/as-m2.2-1920x1080.png)
+![AS-M3 sequence workspace](docs/evidence/as-m3-sequence.png)
 
-AS-M1 foundations (decoder, catalog, playback engine, pixel-exact tests)
-are unchanged; see `docs/AS-M1-REPORT.md`.
+AS-M2 viewer foundations are unchanged; see `docs/AS-M2.2-REPORT.md`.
 
 ## Project layout
 
 ```text
 src/DcAnim.Core/     PAK reader, BATL parser, frame composer, catalog +
-                     categories, playback engine, timeline math, workspace
-                     settings, game locator (UI-free, tested)
-src/DcAnim.App/      Avalonia workspace UI: theme + icons, asset browser,
-                     viewport, transport, inspector, filmstrip timeline
-tests/DcAnim.Tests/  xUnit v3: format + workspace-logic + native-asset tests
-docs/                ARCHITECTURE.md, AS-M1-REPORT.md, AS-M2-REPORT.md,
-                     evidence/
+                     categories, sequence model/timing/composer, PNG/GIF/
+                     sheet exporters, playback engine, timeline math,
+                     workspace settings, game locator (UI-free, tested)
+src/DcAnim.App/      Avalonia workspace UI: viewer + sequence modes, asset
+                     browser, viewport, transport, inspectors, viewer +
+                     sequence timelines, export dialog
+tests/DcAnim.Tests/  xUnit v3: format + workspace-logic + sequence/export +
+                     native-asset tests
+docs/                ARCHITECTURE.md, AS-M1/M2/M2.1/M2.2/M3 reports,
+                     evidence/ (incl. katana-combo.dcanim tutorial project)
 scripts/run.cmd      launcher
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
-[docs/AS-M1-REPORT.md](docs/AS-M1-REPORT.md).
+[docs/AS-M3-REPORT.md](docs/AS-M3-REPORT.md).
 
 ## Tests
 

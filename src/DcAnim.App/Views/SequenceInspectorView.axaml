@@ -1,0 +1,55 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DcAnim.App.Views.SequenceInspectorView">
+  <ScrollViewer>
+    <StackPanel Spacing="8">
+      <Expander IsExpanded="True" HorizontalAlignment="Stretch">
+        <Expander.Header>
+          <TextBlock Text="CLIP" Classes="ws-panel-header" Margin="0"/>
+        </Expander.Header>
+        <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="Animation" Classes="ws-prop-label"/>
+          <TextBlock Grid.Row="0" Grid.Column="1" x:Name="ClipAnim" Classes="ws-prop-value" Text="—"/>
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="Speed" Classes="ws-prop-label" VerticalAlignment="Center"/>
+          <NumericUpDown Grid.Row="1" Grid.Column="1" x:Name="ClipSpeed" Minimum="0.25" Maximum="4"
+                         Increment="0.25" FormatString="0.##x" Width="110" HorizontalAlignment="Left"
+                         ToolTip.Tip="Clip playback speed (0.25–4×)"/>
+          <TextBlock Grid.Row="2" Grid.Column="0" Text="Presets" Classes="ws-prop-label" VerticalAlignment="Center"/>
+          <ComboBox Grid.Row="2" Grid.Column="1" x:Name="ClipSpeedPreset" Width="110" HorizontalAlignment="Left"
+                    ToolTip.Tip="Common speeds">
+            <ComboBoxItem Content="0.25×" Tag="0.25"/>
+            <ComboBoxItem Content="0.5×" Tag="0.5"/>
+            <ComboBoxItem Content="0.75×" Tag="0.75"/>
+            <ComboBoxItem Content="1×" Tag="1"/>
+            <ComboBoxItem Content="1.25×" Tag="1.25"/>
+            <ComboBoxItem Content="1.5×" Tag="1.5"/>
+            <ComboBoxItem Content="2×" Tag="2"/>
+          </ComboBox>
+          <TextBlock Grid.Row="3" Grid.Column="0" Text="Frames" Classes="ws-prop-label"/>
+          <TextBlock Grid.Row="3" Grid.Column="1" x:Name="ClipFrames" Classes="ws-prop-value" Text="—"/>
+          <TextBlock Grid.Row="4" Grid.Column="0" Text="Duration" Classes="ws-prop-label"/>
+          <TextBlock Grid.Row="4" Grid.Column="1" x:Name="ClipDuration" Classes="ws-prop-value" Text="—"/>
+        </Grid>
+      </Expander>
+
+      <Expander IsExpanded="True" HorizontalAlignment="Stretch">
+        <Expander.Header>
+          <TextBlock Text="SEQUENCE" Classes="ws-panel-header" Margin="0"/>
+        </Expander.Header>
+        <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" Classes="ws-prop-label" VerticalAlignment="Center"/>
+          <TextBox Grid.Row="0" Grid.Column="1" x:Name="ProjectName" Watermark="Sequence name"
+                   ToolTip.Tip="Project name (saved in the .dcanim file)"/>
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="FPS" Classes="ws-prop-label" VerticalAlignment="Center"/>
+          <NumericUpDown Grid.Row="1" Grid.Column="1" x:Name="ProjectFps" Minimum="1" Maximum="120"
+                         Increment="1" FormatString="0" Width="110" HorizontalAlignment="Left"
+                         ToolTip.Tip="Sequence frame rate (output frames per second)"/>
+          <TextBlock Grid.Row="2" Grid.Column="0" Text="Clips" Classes="ws-prop-label"/>
+          <TextBlock Grid.Row="2" Grid.Column="1" x:Name="SeqClips" Classes="ws-prop-value" Text="—"/>
+          <TextBlock Grid.Row="3" Grid.Column="0" Text="Total" Classes="ws-prop-label"/>
+          <TextBlock Grid.Row="3" Grid.Column="1" x:Name="SeqTotal" Classes="ws-prop-value" Text="—"/>
+        </Grid>
+      </Expander>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

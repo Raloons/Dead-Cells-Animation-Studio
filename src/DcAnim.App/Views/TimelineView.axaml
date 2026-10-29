@@ -27,7 +27,10 @@
             Background="{StaticResource WsTrackBackground}">
       <ScrollViewer x:Name="TrackScroll" HorizontalScrollBarVisibility="Auto"
                     VerticalScrollBarVisibility="Disabled" Padding="0">
-        <controls:TrackControl x:Name="Track" Height="92"/>
+        <Grid>
+          <controls:TrackControl x:Name="Track" Height="92"/>
+          <controls:SequenceTrackControl x:Name="SeqTrack" Height="100" IsVisible="False"/>
+        </Grid>
       </ScrollViewer>
     </Border>
   </DockPanel>

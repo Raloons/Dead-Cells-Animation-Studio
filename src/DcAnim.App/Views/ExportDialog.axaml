@@ -1,0 +1,50 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="DcAnim.App.Views.ExportDialog"
+        Title="Export sequence"
+        Width="460" Height="520" MinWidth="420" MinHeight="480"
+        WindowStartupLocation="CenterOwner">
+  <ScrollViewer>
+    <StackPanel Spacing="10" Margin="16">
+      <TextBlock Text="FORMAT" Classes="ws-panel-header"/>
+      <StackPanel Spacing="4">
+        <RadioButton x:Name="PngOption" Content="PNG frame sequence (transparent, one file per frame)"/>
+        <RadioButton x:Name="GifOption" Content="Animated GIF (256 colors, ~10 ms timing steps)"/>
+        <RadioButton x:Name="SheetOption" Content="Sprite sheet PNG + JSON metadata"/>
+      </StackPanel>
+
+      <TextBlock Text="DESTINATION" Classes="ws-panel-header"/>
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBox Grid.Column="0" x:Name="DestinationBox" Watermark="Choose output…"/>
+        <Button Grid.Column="1" x:Name="BrowseButton" Classes="ws-tool" Content="Browse…"
+                Margin="6,0,0,0" VerticalAlignment="Center"/>
+      </Grid>
+
+      <TextBlock Text="OPTIONS" Classes="ws-panel-header"/>
+      <StackPanel Spacing="6">
+        <CheckBox x:Name="LoopCheck" Content="GIF: loop forever" IsChecked="True"/>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="Sheet columns (0 = auto)" Classes="ws-prop-label" VerticalAlignment="Center"/>
+          <NumericUpDown x:Name="ColumnsBox" Minimum="0" Maximum="64" Value="0" Width="90"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="Sheet padding (px)" Classes="ws-prop-label" VerticalAlignment="Center"/>
+          <NumericUpDown x:Name="PaddingBox" Minimum="0" Maximum="32" Value="0" Width="90"/>
+        </StackPanel>
+        <CheckBox x:Name="OverwriteCheck" Content="Overwrite existing files"/>
+      </StackPanel>
+
+      <TextBlock Text="ESTIMATE" Classes="ws-panel-header"/>
+      <TextBlock x:Name="EstimateText" Classes="ws-prop-value" Text="—"/>
+
+      <ProgressBar x:Name="ProgressBar" Minimum="0" Maximum="1" Height="6" IsVisible="False"/>
+      <TextBlock x:Name="ResultText" FontSize="12" Foreground="{StaticResource WsTextSecondary}"
+                 TextWrapping="Wrap" Text=""/>
+
+      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+        <Button x:Name="CancelButton" Content="Close" MinWidth="80"/>
+        <Button x:Name="ExportButton" Content="Export" MinWidth="100"/>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</Window>
