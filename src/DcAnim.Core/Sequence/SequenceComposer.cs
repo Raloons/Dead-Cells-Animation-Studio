@@ -5,14 +5,26 @@ namespace DcAnim.Core.Sequence;
 
 /// <summary>
 /// One resolved output segment: which clip, where it starts, and how its
-/// output frames map to source frames.
+/// output frames map to source frames (trim + reverse + holds included).
 /// </summary>
 public sealed record ResolvedClip(
     SequenceClip Clip,
     int ClipIndex,
     int StartFrame,
     int OutputFrames,
-    int SourceFrames);
+    int SourceFrames,
+    int SourceFirst,
+    bool Reversed,
+    int LeadHoldFrames,
+    int TailHoldFrames)
+{
+    /// <summary>Base (resampled) output count without hold repeats.</summary>
+    public int BaseOutputs => OutputFrames - LeadHoldFrames - TailHoldFrames;
+
+    /// <summary>Shared output→source mapping for this segment.</summary>
+    public SequenceTiming.SpliceMap Map => new(
+        SourceFirst, SourceFrames, Reversed, LeadHoldFrames, BaseOutputs, TailHoldFrames);
+}
 
 /// <summary>
 /// Builds the playable/exportable form of a project: an
@@ -43,8 +55,18 @@ public static class SequenceComposer
             }
             if (sources <= 0)
                 continue;
-            int outputs = SequenceTiming.ClipOutputFrames(sources, clip.Speed, project.Fps);
-            resolved.Add(new ResolvedClip(clip, i, start, outputs, sources));
+            // Clamp the trim into the available frames (game-version drift):
+            // first into range, last into [first..end]. Structural validity
+            // (first >= 0, last >= first, holds >= 0) is enforced on write.
+            int first = Math.Clamp(clip.SourceFirst, 0, sources - 1);
+            int last = Math.Clamp(clip.SourceLast ?? (sources - 1), first, sources - 1);
+            int visible = last - first + 1;
+            if (visible <= 0)
+                continue;
+            int lead = Math.Max(0, clip.LeadHoldFrames);
+            int tail = Math.Max(0, clip.TailHoldFrames);
+            int outputs = SequenceTiming.ClipOutputFrames(visible, clip.Speed, project.Fps, lead, tail);
+            resolved.Add(new ResolvedClip(clip, i, start, outputs, visible, first, clip.Reversed, lead, tail));
             start += outputs;
         }
         return resolved;
@@ -69,7 +91,7 @@ public static class SequenceComposer
         {
             for (int k = 0; k < r.OutputFrames; k++)
             {
-                int src = SequenceTiming.SourceIndex(k, r.SourceFrames, r.OutputFrames);
+                int src = r.Map.SourceAt(k);
                 frames.Add(loader.LoadFrame(r.Clip.AnimationId, src, project.Fps));
             }
         }

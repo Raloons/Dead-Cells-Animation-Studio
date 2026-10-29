@@ -33,10 +33,7 @@ public sealed class UndoHistory
     internal void Capture(string label, string before)
     {
         if (_coalesceLabel is not null)
-        {
-            _coalesceLabel = label; // latest label wins for the grouped step
-            return;
-        }
+            return; // first label wins for the grouped step
         Push(new Entry(label, before));
     }
 
@@ -292,6 +289,47 @@ public sealed class SequenceDocument
         Changed?.Invoke();
     }
 
+    // ---------- grouped edits (multi-mutation single undo step) ----------
+
+    /// <summary>
+    /// Begin a grouped edit (e.g. paste + ripple): mutations until
+    /// <see cref="EndGroup"/> collapse into one history step. Must not nest
+    /// with an open drag/gesture group.
+    /// </summary>
+    public void BeginGroup(string label)
+    {
+        if (History.IsCoalescing)
+            throw new InvalidOperationException("Cannot begin an edit group inside an open gesture.");
+        BeginDrag(label);
+    }
+
+    /// <summary>Commit a grouped edit as a single undo step.</summary>
+    public void EndGroup() => EndDrag();
+
+    /// <summary>
+    /// End a group, but abandon it (no history entry) when nothing actually
+    /// changed — e.g. a no-op split or an empty delete. Returns whether an
+    /// undo step was recorded.
+    /// </summary>
+    public bool EndGroupIfChanged()
+    {
+        if (_dragSnapshot is null)
+        {
+            EndGroup();
+            return true;
+        }
+        if (string.Equals(_dragSnapshot, _currentSnapshot, StringComparison.Ordinal))
+        {
+            AbortGroup();
+            return false;
+        }
+        EndGroup();
+        return true;
+    }
+
+    /// <summary>Abort a grouped edit, restoring the pre-group state.</summary>
+    public void AbortGroup() => AbortDrag();
+
     // ---------- clips ----------
 
     public SequenceClip AddClip(string animationId, double speed = 1.0, int? index = null)
@@ -337,6 +375,11 @@ public sealed class SequenceDocument
             Id = Guid.NewGuid().ToString("N"),
             AnimationId = source.AnimationId,
             Speed = source.Speed,
+            SourceFirst = source.SourceFirst,
+            SourceLast = source.SourceLast,
+            Reversed = source.Reversed,
+            LeadHoldFrames = source.LeadHoldFrames,
+            TailHoldFrames = source.TailHoldFrames,
             BaseTransform = source.BaseTransform,
             Keyframes = source.Keyframes.Select(k => k with { }).ToList(),
         };
@@ -372,6 +415,579 @@ public sealed class SequenceDocument
             return;
         Touch($"Speed {speed:0.##}× ({clip.AnimationId})");
         clip.Speed = speed;
+        _currentSnapshot = Snapshot(_project);
+        Changed?.Invoke();
+    }
+
+    // ---------- splicing: trim, reverse, hold, split, ranges ----------
+
+    /// <summary>Result of <see cref="SplitAt"/>.</summary>
+    public sealed record SplitResult(string LeftId, string RightId, int DroppedKeys);
+
+    /// <summary>
+    /// Resolve a clip's effective (clamped) trim against available frames.
+    /// </summary>
+    private static (int First, int Visible) TrimRange(SequenceClip clip, int sourceCount)
+    {
+        if (sourceCount <= 0)
+            return (0, 0);
+        int first = Math.Clamp(clip.SourceFirst, 0, sourceCount - 1);
+        int last = Math.Clamp(clip.SourceLast ?? (sourceCount - 1), first, sourceCount - 1);
+        return (first, last - first + 1);
+    }
+
+    private SequenceTiming.SpliceMap MapFor(SequenceClip clip, int sourceCount)
+    {
+        var (first, visible) = TrimRange(clip, sourceCount);
+        int lead = Math.Max(0, clip.LeadHoldFrames);
+        int tail = Math.Max(0, clip.TailHoldFrames);
+        int baseN = visible > 0
+            ? SequenceTiming.ClipOutputFrames(visible, clip.Speed, _project.Fps)
+            : 0;
+        return new SequenceTiming.SpliceMap(first, visible, clip.Reversed, lead, baseN, tail);
+    }
+
+    /// <summary>
+    /// Re-anchor keyframes through a structural edit. Keys stick to the
+    /// source frame they were authored on: each key is placed at the first
+    /// new-local frame showing the same source (last wins on collision).
+    /// Keys whose source is no longer visible are dropped (counted by the
+    /// caller via list-size comparison). Keys authored in the old hold zone
+    /// keep their offset from the end when the new mapping also has a hold
+    /// zone, preserving end-pose animation.
+    /// </summary>
+    private static List<TransformKeyframe> RemapSpan(
+        IReadOnlyList<TransformKeyframe> keys,
+        SequenceTiming.SpliceMap oldMap, int spanStart, int spanLength,
+        SequenceTiming.SpliceMap newMap)
+    {
+        var result = new List<TransformKeyframe>();
+        int oldEnd = spanStart + spanLength;
+        int oldTailStart = oldMap.TotalOutputs - oldMap.TailHold;
+        int newTailStart = newMap.TotalOutputs - newMap.TailHold;
+        foreach (var grp in keys.GroupBy(k => k.Property).OrderBy(g => g.Key))
+        {
+            foreach (var k in grp.OrderBy(k => k.Frame))
+            {
+                if (k.Frame < spanStart || k.Frame >= oldEnd)
+                    continue;
+                int nk;
+                if (oldMap.TailHold > 0 && newMap.TailHold > 0 && k.Frame >= oldTailStart)
+                {
+                    int off = oldMap.TotalOutputs - 1 - k.Frame;
+                    nk = newMap.TotalOutputs - 1 - off;
+                    if (nk < newTailStart)
+                    {
+                        // Shrunk hold: fall back to source anchoring.
+                        nk = -1;
+                    }
+                }
+                else
+                {
+                    nk = -1;
+                }
+                if (nk < 0)
+                {
+                    int src;
+                    try { src = oldMap.SourceAt(k.Frame); }
+                    catch (ArgumentOutOfRangeException) { continue; }
+                    for (int j = 0; j < newMap.TotalOutputs; j++)
+                    {
+                        int s;
+                        try { s = newMap.SourceAt(j); }
+                        catch (ArgumentOutOfRangeException) { break; }
+                        if (s == src) { nk = j; break; }
+                    }
+                    if (nk < 0)
+                        continue;
+                }
+                result.RemoveAll(x => x.Property == k.Property && x.Frame == nk);
+                result.Add(k with { Frame = nk });
+            }
+        }
+        result.Sort((a, b) =>
+        {
+            int c = a.Property.CompareTo(b.Property);
+            return c != 0 ? c : a.Frame.CompareTo(b.Frame);
+        });
+        return result;
+    }
+
+    private static List<TransformKeyframe> RemapKeys(
+        IReadOnlyList<TransformKeyframe> keys,
+        SequenceTiming.SpliceMap oldMap,
+        SequenceTiming.SpliceMap newMap) =>
+        RemapSpan(keys, oldMap, 0, oldMap.TotalOutputs, newMap);
+
+    private void RequireSources(string animationId, int sourceCount)
+    {
+        if (sourceCount <= 0)
+            throw new InvalidOperationException($"Clip '{animationId}' has no available frames.");
+    }
+
+    /// <summary>
+    /// Set the visible source range (0-based inclusive). Returns the number
+    /// of keyframes dropped because their source left the visible range.
+    /// </summary>
+    public int SetTrim(string clipId, int first, int? last, int sourceCount)
+    {
+        var clip = FindClip(clipId);
+        if (first < 0)
+            throw new ArgumentOutOfRangeException(nameof(first));
+        if (last.HasValue && last.Value < first)
+            throw new ArgumentOutOfRangeException(nameof(last));
+        RequireSources(clip.AnimationId, sourceCount);
+        if (first >= sourceCount)
+            throw new InvalidOperationException($"Trim start {first} is beyond the {sourceCount} available frames.");
+        var oldMap = MapFor(clip, sourceCount);
+        Touch($"Trim {clip.AnimationId}");
+        clip.SourceFirst = first;
+        clip.SourceLast = last;
+        var newMap = MapFor(clip, sourceCount);
+        var remapped = RemapKeys(clip.Keyframes, oldMap, newMap);
+        int dropped = clip.Keyframes.Count - remapped.Count;
+        clip.Keyframes = remapped;
+        _currentSnapshot = Snapshot(_project);
+        Changed?.Invoke();
+        return dropped;
+    }
+
+    /// <summary>
+    /// Set reverse playback. Keyframes mirror with the mapping, so transform
+    /// motion reverses in sync. Returns dropped keyframes (normally 0).
+    /// </summary>
+    public int SetReversed(string clipId, bool reversed, int sourceCount)
+    {
+        var clip = FindClip(clipId);
+        RequireSources(clip.AnimationId, sourceCount);
+        if (clip.Reversed == reversed)
+            return 0;
+        var oldMap = MapFor(clip, sourceCount);
+        Touch(reversed ? $"Reverse {clip.AnimationId}" : $"Unreverse {clip.AnimationId}");
+        clip.Reversed = reversed;
+        var newMap = MapFor(clip, sourceCount);
+        var remapped = RemapKeys(clip.Keyframes, oldMap, newMap);
+        int dropped = clip.Keyframes.Count - remapped.Count;
+        clip.Keyframes = remapped;
+        _currentSnapshot = Snapshot(_project);
+        Changed?.Invoke();
+        return dropped;
+    }
+
+    /// <summary>
+    /// Set the tail hold (extra repeats of the final displayed frame).
+    /// Returns dropped keyframes (keys orphaned by a shrunk hold zone).
+    /// </summary>
+    public int SetTailHold(string clipId, int holdFrames, int sourceCount)
+    {
+        if (holdFrames < 0 || holdFrames > SequenceClip.MaxHoldFrames)
+            throw new ArgumentOutOfRangeException(nameof(holdFrames));
+        var clip = FindClip(clipId);
+        RequireSources(clip.AnimationId, sourceCount);
+        if (clip.TailHoldFrames == holdFrames)
+            return 0;
+        var oldMap = MapFor(clip, sourceCount);
+        Touch(holdFrames == 0 ? $"Clear hold ({clip.AnimationId})" : $"Hold {holdFrames}f ({clip.AnimationId})");
+        clip.TailHoldFrames = holdFrames;
+        var newMap = MapFor(clip, sourceCount);
+        var remapped = RemapKeys(clip.Keyframes, oldMap, newMap);
+        int dropped = clip.Keyframes.Count - remapped.Count;
+        clip.Keyframes = remapped;
+        _currentSnapshot = Snapshot(_project);
+        Changed?.Invoke();
+        return dropped;
+    }
+
+    /// <summary>
+    /// Split the clip covering <paramref name="globalFrame"/> into two clips
+    /// at the first source boundary at or after the playhead. Returns null
+    /// (no-op) when the frame is outside any clip or at a clip edge.
+    /// Halves keep speed/direction; keyframes remap with boundary holds so
+    /// evaluated motion stays continuous. The left half keeps the original
+    /// id; the right half gets a new one.
+    /// </summary>
+    public SplitResult? SplitAt(int globalFrame, Func<string, int> sourceCounter)
+    {
+        var found = LocateSplit(globalFrame, sourceCounter);
+        if (found is null)
+            return null;
+        Touch($"Split {found.Value.Resolved.Clip.AnimationId}");
+        var result = SplitResolved(found.Value.Resolved, found.Value.Snap, found.Value.Sources);
+        _currentSnapshot = Snapshot(_project);
+        Changed?.Invoke();
+        return result;
+    }
+
+    private (ResolvedClip Resolved, int Snap, int Sources)? LocateSplit(
+        int globalFrame, Func<string, int> sourceCounter)
+    {
+        var resolved = SequenceComposer.Resolve(_project, sourceCounter);
+        var r = resolved.FirstOrDefault(r =>
+            globalFrame >= r.StartFrame && globalFrame < r.StartFrame + r.OutputFrames);
+        if (r is null)
+            return null;
+        var clip = r.Clip;
+        int c = globalFrame - r.StartFrame;
+        if (c <= 0)
+            return null; // at clip start: nothing to split off
+        // Snap forward past any hold run containing the playhead, so both
+        // halves cover whole source runs. A cut already on a source
+        // boundary stays put; a trailing hold run to the end (or the very
+        // last frame) means there is nothing to split off.
+        int prevShown = r.Map.SourceAt(c - 1);
+        int cSnap = c;
+        while (cSnap < r.OutputFrames && r.Map.SourceAt(cSnap) == prevShown)
+            cSnap++;
+        if (cSnap >= r.OutputFrames)
+            return null;
+        int sources;
+        try { sources = sourceCounter(clip.AnimationId); }
+        catch (KeyNotFoundException) { return null; }
+        if (sources <= 0)
+            return null;
+        return (r, cSnap, sources);
+    }
+
+    /// <summary>
+    /// Delete global output frames <c>[startGlobal, endGlobal)</c>, trimming
+    /// or removing overlapped clips. Returns dropped keyframes. The timeline
+    /// shrinks by exactly the range length at 1:1 mappings; resampled clips
+    /// may drift by a frame per touched clip (documented).
+    /// </summary>
+    public int DeleteRange(int startGlobal, int endGlobal, Func<string, int> sourceCounter)
+    {
+        if (endGlobal <= startGlobal)
+            return 0;
+        var resolved = SequenceComposer.Resolve(_project, sourceCounter);
+        if (resolved.Count == 0)
+            return 0;
+        Touch("Delete frames");
+        int droppedTotal = 0;
+        for (int i = resolved.Count - 1; i >= 0; i--)
+        {
+            var r = resolved[i];
+            int l0 = Math.Max(startGlobal, r.StartFrame) - r.StartFrame;
+            int l1 = Math.Min(endGlobal, r.StartFrame + r.OutputFrames) - r.StartFrame;
+            if (l1 <= 0 || l0 >= r.OutputFrames)
+                continue;
+            l0 = Math.Max(0, l0);
+            l1 = Math.Min(r.OutputFrames, l1);
+            int idx = _project.Clips.FindIndex(c => c.Id == r.Clip.Id);
+            if (idx < 0)
+                continue;
+            if (l0 == 0 && l1 == r.OutputFrames)
+            {
+                _project.Clips.RemoveAt(idx);
+                continue;
+            }
+            int sources;
+            try { sources = sourceCounter(r.Clip.AnimationId); }
+            catch (KeyNotFoundException) { continue; }
+            var pieces = new List<(int A, int B)>();
+            if (l0 > 0)
+                pieces.Add((0, l0));
+            if (l1 < r.OutputFrames)
+                pieces.Add((l1, r.OutputFrames));
+            var replacements = new List<SequenceClip>();
+            foreach (var (a, b) in pieces)
+            {
+                int sMin = int.MaxValue, sMax = int.MinValue;
+                for (int k = a; k < b; k++)
+                {
+                    int s = r.Map.SourceAt(k);
+                    sMin = Math.Min(sMin, s);
+                    sMax = Math.Max(sMax, s);
+                }
+                var piece = new SequenceClip
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    AnimationId = r.Clip.AnimationId,
+                    Speed = r.Clip.Speed,
+                    SourceFirst = sMin,
+                    SourceLast = sMax,
+                    Reversed = r.Clip.Reversed,
+                    LeadHoldFrames = a == 0 ? Math.Max(0, r.Clip.LeadHoldFrames) : 0,
+                    TailHoldFrames = b == r.OutputFrames ? Math.Max(0, r.Clip.TailHoldFrames) : 0,
+                    BaseTransform = r.Clip.BaseTransform,
+                    Keyframes = new List<TransformKeyframe>(),
+                };
+                var pieceMap = MapFor(piece, sources);
+                var remapped = RemapSpan(r.Clip.Keyframes, r.Map, a, b - a, pieceMap);
+                droppedTotal += r.Clip.Keyframes.Count(k => k.Frame >= a && k.Frame < b) - remapped.Count;
+                piece.Keyframes = remapped;
+                replacements.Add(piece);
+            }
+            _project.Clips.RemoveAt(idx);
+            _project.Clips.InsertRange(idx, replacements);
+        }
+        _currentSnapshot = Snapshot(_project);
+        Changed?.Invoke();
+        return Math.Max(0, droppedTotal);
+    }
+
+    /// <summary>
+    /// A non-destructive, self-contained copy of source frames: the unit of
+    /// clipboard splice operations.
+    /// </summary>
+    public sealed record SpliceSegment(
+        string AnimationId,
+        int SourceFirst,
+        int SourceLast,
+        double Speed,
+        bool Reversed,
+        int LeadHoldFrames,
+        int TailHoldFrames,
+        List<TransformKeyframe> Keyframes)
+    {
+        public int VisibleSources => SourceLast - SourceFirst + 1;
+    }
+
+    /// <summary>
+    /// Copy global output frames <c>[startGlobal, endGlobal)</c> as ordered
+    /// splice segments (one per overlapped clip, holds included).
+    /// </summary>
+    public IReadOnlyList<SpliceSegment> CopyRange(
+        int startGlobal, int endGlobal, Func<string, int> sourceCounter)
+    {
+        var segments = new List<SpliceSegment>();
+        if (endGlobal <= startGlobal)
+            return segments;
+        var resolved = SequenceComposer.Resolve(_project, sourceCounter);
+        foreach (var r in resolved)
+        {
+            int l0 = Math.Max(startGlobal, r.StartFrame) - r.StartFrame;
+            int l1 = Math.Min(endGlobal, r.StartFrame + r.OutputFrames) - r.StartFrame;
+            if (l1 <= 0 || l0 >= r.OutputFrames)
+                continue;
+            l0 = Math.Max(0, l0);
+            l1 = Math.Min(r.OutputFrames, l1);
+            int sMin = int.MaxValue, sMax = int.MinValue;
+            for (int k = l0; k < l1; k++)
+            {
+                int s = r.Map.SourceAt(k);
+                sMin = Math.Min(sMin, s);
+                sMax = Math.Max(sMax, s);
+            }
+            // Holds overlapped by the span travel with the segment (repeats
+            // are identical, so this is exact).
+            int lead = 0, tail = 0;
+            if (r.LeadHoldFrames > 0)
+                lead = Math.Max(0, Math.Min(l1, r.LeadHoldFrames) - l0);
+            int tailStart = r.OutputFrames - r.TailHoldFrames;
+            if (r.TailHoldFrames > 0)
+                tail = Math.Max(0, l1 - Math.Max(l0, tailStart));
+            var segMap = new SequenceTiming.SpliceMap(
+                sMin, sMax - sMin + 1, r.Clip.Reversed, lead,
+                SequenceTiming.ClipOutputFrames(sMax - sMin + 1, r.Clip.Speed, _project.Fps), tail);
+            var keys = RemapSpan(r.Clip.Keyframes, r.Map, l0, l1 - l0, segMap);
+            segments.Add(new SpliceSegment(
+                r.Clip.AnimationId, sMin, sMax, r.Clip.Speed, r.Clip.Reversed,
+                lead, tail, keys));
+        }
+        return segments;
+    }
+
+    /// <summary>
+    /// Insert splice segments at a global frame (splitting the host clip
+    /// when the point falls mid-clip). Returns the created clips in order.
+    /// </summary>
+    public IReadOnlyList<SequenceClip> PasteSegments(
+        int insertGlobal, IReadOnlyList<SpliceSegment> segments, Func<string, int> sourceCounter)
+    {
+        var created = new List<SequenceClip>();
+        if (segments.Count == 0)
+            return created;
+        foreach (var s in segments)
+        {
+            if (s.Speed <= 0 || double.IsNaN(s.Speed) || double.IsInfinity(s.Speed))
+                throw new ArgumentOutOfRangeException(nameof(segments), "Segment speed must be positive.");
+            if (s.SourceFirst < 0 || s.SourceLast < s.SourceFirst)
+                throw new ArgumentOutOfRangeException(nameof(segments), "Segment source range is invalid.");
+            if (s.LeadHoldFrames < 0 || s.TailHoldFrames < 0 ||
+                s.LeadHoldFrames > SequenceClip.MaxHoldFrames || s.TailHoldFrames > SequenceClip.MaxHoldFrames)
+                throw new ArgumentOutOfRangeException(nameof(segments), "Segment hold is out of range.");
+        }
+        Touch($"Paste {segments.Count} segment(s)");
+        var resolved = SequenceComposer.Resolve(_project, sourceCounter);
+        int total = resolved.Sum(r => r.OutputFrames);
+        int at = Math.Clamp(insertGlobal, 0, total);
+        var host = resolved.FirstOrDefault(r => at > r.StartFrame && at < r.StartFrame + r.OutputFrames);
+        if (host is not null)
+        {
+            // Split first so the paste lands on a clean boundary. The split
+            // shares this Touch (coalesced by the caller group or standalone).
+            SplitAtInternal(at, sourceCounter);
+            resolved = SequenceComposer.Resolve(_project, sourceCounter);
+            total = resolved.Sum(r => r.OutputFrames);
+            at = Math.Min(at, total);
+        }
+        int index = resolved.Count;
+        for (int i = 0; i < resolved.Count; i++)
+        {
+            if (resolved[i].StartFrame >= at) { index = i; break; }
+        }
+        // Map the resolved index back to a project clip index.
+        int projectIndex = _project.Clips.Count;
+        if (index < resolved.Count)
+        {
+            int pi = _project.Clips.FindIndex(c => c.Id == resolved[index].Clip.Id);
+            if (pi >= 0)
+                projectIndex = pi;
+        }
+        foreach (var s in segments)
+        {
+            var clip = new SequenceClip
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                AnimationId = s.AnimationId,
+                Speed = s.Speed,
+                SourceFirst = s.SourceFirst,
+                SourceLast = s.SourceLast,
+                Reversed = s.Reversed,
+                LeadHoldFrames = s.LeadHoldFrames,
+                TailHoldFrames = s.TailHoldFrames,
+                Keyframes = s.Keyframes.Select(k => k with { }).ToList(),
+            };
+            _project.Clips.Insert(projectIndex++, clip);
+            created.Add(clip);
+        }
+        _currentSnapshot = Snapshot(_project);
+        Changed?.Invoke();
+        return created;
+    }
+
+    /// <summary>Split without its own history entry (for grouped callers).</summary>
+    private SplitResult? SplitAtInternal(int globalFrame, Func<string, int> sourceCounter)
+    {
+        var found = LocateSplit(globalFrame, sourceCounter);
+        if (found is null)
+            return null;
+        return SplitResolved(found.Value.Resolved, found.Value.Snap, found.Value.Sources);
+    }
+
+    private SplitResult SplitResolved(ResolvedClip r, int cSnap, int sources)
+    {
+        var clip = r.Clip;
+        int leftMin = int.MaxValue, leftMax = int.MinValue;
+        for (int k = 0; k < cSnap; k++)
+        {
+            int s = r.Map.SourceAt(k);
+            leftMin = Math.Min(leftMin, s);
+            leftMax = Math.Max(leftMax, s);
+        }
+        int rightMin = int.MaxValue, rightMax = int.MinValue;
+        for (int k = cSnap; k < r.OutputFrames; k++)
+        {
+            int s = r.Map.SourceAt(k);
+            rightMin = Math.Min(rightMin, s);
+            rightMax = Math.Max(rightMax, s);
+        }
+
+        int clipIndex = _project.Clips.IndexOf(clip);
+        var left = clip;
+        left.SourceFirst = leftMin;
+        left.SourceLast = leftMax;
+        left.LeadHoldFrames = Math.Max(0, clip.LeadHoldFrames);
+        left.TailHoldFrames = 0;
+        var leftMap = MapFor(left, sources);
+
+        var right = new SequenceClip
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            AnimationId = clip.AnimationId,
+            Speed = clip.Speed,
+            SourceFirst = rightMin,
+            SourceLast = rightMax,
+            Reversed = clip.Reversed,
+            LeadHoldFrames = 0,
+            TailHoldFrames = Math.Max(0, clip.TailHoldFrames),
+            BaseTransform = clip.BaseTransform,
+            Keyframes = new List<TransformKeyframe>(),
+        };
+        var rightMap = MapFor(right, sources);
+
+        var leftKeys = RemapSpan(clip.Keyframes, r.Map, 0, cSnap, leftMap);
+        var rightKeys = RemapSpan(clip.Keyframes, r.Map, cSnap, r.OutputFrames - cSnap, rightMap);
+        int dropped = clip.Keyframes.Count - (leftKeys.Count + rightKeys.Count);
+
+        var props = clip.Keyframes.Select(k => k.Property).Distinct().ToList();
+        foreach (var p in props)
+        {
+            bool hasLeft = clip.Keyframes.Any(k => k.Property == p && k.Frame < cSnap);
+            bool hasRight = clip.Keyframes.Any(k => k.Property == p && k.Frame >= cSnap);
+            // Boundary keys pin the evaluated motion at the seam. Their value
+            // is the original evaluation there; their interpolation is the
+            // original previous key's, so a Linear span crossing the cut
+            // continues with the identical slope instead of flattening.
+            if (hasLeft && hasRight)
+            {
+                double lv = KeyframeEvaluator.Evaluate(clip.Keyframes, p, cSnap - 1, clip.BaseTransform.Get(p));
+                double rv = KeyframeEvaluator.Evaluate(clip.Keyframes, p, cSnap, clip.BaseTransform.Get(p));
+                var li = PrevInterpolation(clip.Keyframes, p, cSnap - 1);
+                var ri = PrevInterpolation(clip.Keyframes, p, cSnap);
+                leftKeys.RemoveAll(k => k.Property == p && k.Frame == leftMap.TotalOutputs - 1);
+                leftKeys.Add(new TransformKeyframe(p, leftMap.TotalOutputs - 1, lv, li));
+                rightKeys.RemoveAll(k => k.Property == p && k.Frame == 0);
+                rightKeys.Add(new TransformKeyframe(p, 0, rv, ri));
+            }
+            else if (hasLeft)
+            {
+                double rv = KeyframeEvaluator.Evaluate(clip.Keyframes, p, cSnap, clip.BaseTransform.Get(p));
+                var ri = PrevInterpolation(clip.Keyframes, p, cSnap);
+                rightKeys.RemoveAll(k => k.Property == p && k.Frame == 0);
+                rightKeys.Add(new TransformKeyframe(p, 0, rv, ri));
+            }
+        }
+        SortKeys(leftKeys);
+        SortKeys(rightKeys);
+
+        left.Keyframes = leftKeys;
+        right.Keyframes = rightKeys;
+        _project.Clips.Insert(clipIndex + 1, right);
+        return new SplitResult(left.Id, right.Id, Math.Max(0, dropped));
+    }
+
+    private static KeyframeInterpolation PrevInterpolation(
+        IReadOnlyList<TransformKeyframe> keys, TransformProperty property, int frame)
+    {
+        TransformKeyframe? prev = null;
+        foreach (var k in keys)
+        {
+            if (k.Property != property || k.Frame > frame)
+                continue;
+            if (prev is null || k.Frame >= prev.Frame)
+                prev = k;
+        }
+        return prev?.Interpolation ?? KeyframeInterpolation.Hold;
+    }
+
+    private static void SortKeys(List<TransformKeyframe> keys) =>
+        keys.Sort((a, b) =>
+        {
+            int c = a.Property.CompareTo(b.Property);
+            return c != 0 ? c : a.Frame.CompareTo(b.Frame);
+        });
+
+    /// <summary>
+    /// Shift effects/audio at or after <paramref name="fromFrame"/> by
+    /// <paramref name="deltaFrames"/> (ripple). No-op when delta is 0.
+    /// </summary>
+    public void ShiftFxAudio(int fromFrame, int deltaFrames)
+    {
+        if (deltaFrames == 0)
+            return;
+        Touch("Ripple timeline");
+        double fps = _project.Fps;
+        foreach (var e in _project.Effects)
+        {
+            if (e.StartFrame >= fromFrame)
+                e.StartFrame = Math.Max(0, e.StartFrame + deltaFrames);
+        }
+        foreach (var a in _project.Audio)
+        {
+            if (a.StartSeconds * fps >= fromFrame - 1e-9)
+                a.StartSeconds = Math.Max(0, a.StartSeconds + deltaFrames / fps);
+        }
         _currentSnapshot = Snapshot(_project);
         Changed?.Invoke();
     }
@@ -794,6 +1410,16 @@ public sealed class SequenceDocument
         Touch("Canvas size");
         _project.CanvasWidth = width;
         _project.CanvasHeight = height;
+        _currentSnapshot = Snapshot(_project);
+        Changed?.Invoke();
+    }
+
+    public void SetRipple(bool enabled)
+    {
+        if (_project.RippleFxAudio == enabled)
+            return;
+        Touch(enabled ? "Ripple on" : "Ripple off");
+        _project.RippleFxAudio = enabled;
         _currentSnapshot = Snapshot(_project);
         Changed?.Invoke();
     }

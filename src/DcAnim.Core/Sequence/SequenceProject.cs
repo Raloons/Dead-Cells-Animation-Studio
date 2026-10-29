@@ -5,6 +5,17 @@ namespace DcAnim.Core.Sequence;
 /// playback speed, an optional base transform and optional transform
 /// keyframes (clip-local output frames). Duration and start are derived
 /// deterministically, never stored.
+/// <para/>
+/// Frame indexing convention: <see cref="SourceFirst"/> and
+/// <see cref="SourceLast"/> are <b>0-based inclusive</b> native source frame
+/// indexes. The UI displays them 1-based ("Frames 4–8 of 26"). Timeline and
+/// playhead positions are 0-based global output frames. A clip plays the
+/// visible source range <c>[SourceFirst..SourceLast]</c> (or to the last
+/// available frame when <see cref="SourceLast"/> is null), optionally
+/// <see cref="Reversed"/>, with <see cref="LeadHoldFrames"/> repeats of the
+/// first displayed frame prepended and <see cref="TailHoldFrames"/> repeats
+/// of the final displayed frame appended. Trimming is non-destructive: the
+/// native animation is never modified.
 /// </summary>
 public sealed class SequenceClip
 {
@@ -16,6 +27,35 @@ public sealed class SequenceClip
 
     /// <summary>Playback speed multiplier (&gt; 0). 1 = native rate.</summary>
     public double Speed { get; set; } = 1.0;
+
+    /// <summary>First visible native source frame (0-based, inclusive).</summary>
+    public int SourceFirst { get; set; } = 0;
+
+    /// <summary>
+    /// Last visible native source frame (0-based, inclusive), or null for
+    /// the last available frame. Resolved against the catalog at compose
+    /// time, so game-version drift clamps instead of crashing.
+    /// </summary>
+    public int? SourceLast { get; set; }
+
+    /// <summary>Play the visible range backward. Source data is untouched.</summary>
+    public bool Reversed { get; set; }
+
+    /// <summary>
+    /// Repeats of the first displayed frame prepended to the clip. User
+    /// editing only creates tail holds; a nonzero lead hold is written by
+    /// Split to keep seam timing (documented in the AS-M4.2 report).
+    /// </summary>
+    public int LeadHoldFrames { get; set; }
+
+    /// <summary>
+    /// Repeats of the final displayed frame appended to the clip
+    /// (freeze-pose hold). Efficient: no pixel data is duplicated.
+    /// </summary>
+    public int TailHoldFrames { get; set; }
+
+    /// <summary>Maximum hold length (either end) in output frames.</summary>
+    public const int MaxHoldFrames = 10000;
 
     /// <summary>Static transform applied under keyframes.</summary>
     public Transform BaseTransform { get; set; } = Transform.Identity;
@@ -73,11 +113,13 @@ public sealed class AudioClip
 /// external effect/audio files by path; never embeds artwork. Serialized as
 /// <c>.dcanim</c> JSON (see <see cref="ProjectSerializer"/>).
 /// Format history: v1 = clips only (AS-M3); v2 adds transforms, keyframes,
-/// effect and audio tracks (AS-M4, backward-compatible load).
+/// effect and audio tracks (AS-M4, backward-compatible load); v3 adds
+/// per-clip source trim, reverse and hold frames (AS-M4.2). Older versions
+/// load with documented defaults (full range, forward, no holds).
 /// </summary>
 public sealed class SequenceProject
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     public int Version { get; set; } = CurrentVersion;
     public string Name { get; set; } = "Untitled";
@@ -87,4 +129,11 @@ public sealed class SequenceProject
     public List<AudioClip> Audio { get; set; } = new();
     public int CanvasWidth { get; set; }
     public int CanvasHeight { get; set; }
+
+    /// <summary>
+    /// When true (default), structural edits that change total duration shift
+    /// effects/audio at or after the edited point by the same delta, keeping
+    /// synchronization. When false they stay at absolute frames.
+    /// </summary>
+    public bool RippleFxAudio { get; set; } = true;
 }

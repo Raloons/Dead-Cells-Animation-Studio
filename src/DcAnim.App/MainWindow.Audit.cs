@@ -67,6 +67,10 @@ public sealed partial class MainWindow
     {
         try
         {
+            // Force a full layout pass first: offscreen captures otherwise
+            // risk showing templated controls (numerics, checkboxes) and
+            // text one frame behind the model in headless runs.
+            UpdateLayout();
             var pixelSize = new PixelSize(Math.Max(1, (int)Bounds.Width), Math.Max(1, (int)Bounds.Height));
             using var rtb = new RenderTargetBitmap(pixelSize, new Avalonia.Vector(96, 96));
             rtb.Render(this);
@@ -640,8 +644,11 @@ public sealed partial class MainWindow
             File.WriteAllText(p,
                 """{"format":"dcanim","version":1,"name":"Legacy","fps":30,"clips":[{"id":"c1","animation":"AtkKatanaB2","speed":1}]}""");
             var loaded = ProjectSerializer.Load(p);
-            AuditCheck(loaded.Version == 2 && loaded.Clips.Count == 1, "v1 migrated");
+            AuditCheck(loaded.Version == SequenceProject.CurrentVersion && loaded.Clips.Count == 1, "v1 migrated");
             AuditCheck(loaded.Clips[0].Keyframes.Count == 0, "v1 keys default");
+            var lc = loaded.Clips[0];
+            AuditCheck(lc.SourceFirst == 0 && lc.SourceLast is null && !lc.Reversed &&
+                lc.LeadHoldFrames == 0 && lc.TailHoldFrames == 0, "v1 splice defaults");
         });
         AuditStep("project.missing-anim-ids", () =>
         {
@@ -871,6 +878,210 @@ public sealed partial class MainWindow
                 "keyframe moved via UI path");
             AuditInvariants("keyframe-move-ui");
         });
+
+        // ---------- AS-M4.2: splicing ----------
+        AuditStep("splice.trim-inspector-path", () =>
+        {
+            _doc.New("Splice");
+            var a = _doc.AddClip(A(), 1.0);
+            RebuildSequence();
+            SelectSeqTarget(SeqTargetKind.Clip, a.Id);
+            // Invalid trims toast instead of throwing.
+            SetTrimForSelection(0, 99);
+            SetTrimForSelection(99, null);
+            var r0 = _seqResolved.First(x => x.Clip.Id == a.Id);
+            AuditCheck(r0.SourceFrames == _loader!.Catalog.GetFrameRegions(A()).Count, "invalid trims clamped");
+            // Valid trim via the inspector path (1-based).
+            SetTrimForSelection(2, 6);
+            var r = _seqResolved.First(x => x.Clip.Id == a.Id);
+            AuditCheck(r.SourceFirst == 1 && r.SourceFrames == 5, "trim applied");
+            AuditCheck(TotalSeqFrames() == 5, "duration follows trim");
+            Undo(); // trim undone
+            AuditCheck(TotalSeqFrames() == _loader.Catalog.GetFrameRegions(A()).Count, "undo restores range");
+            Redo();
+            AuditCheck(TotalSeqFrames() == 5, "redo restores trim");
+            AuditInvariants("trim");
+        });
+        AuditStep("splice.trim-drag-path", () =>
+        {
+            var a = _doc.Project.Clips[0];
+            SelectSeqTarget(SeqTargetKind.Clip, a.Id);
+            var r = _seqResolved.First(x => x.Clip.Id == a.Id);
+            _doc.BeginDrag("Trim clip");
+            OnTrimming(a.Id, true, r.StartFrame + 1); // left edge +1 output
+            _doc.EndDrag();
+            AfterStructuralEdit();
+            var r2 = _seqResolved.First(x => x.Clip.Id == a.Id);
+            AuditCheck(r2.SourceFirst == r.SourceFirst + 1, "drag trimmed left edge");
+            AuditCheck(TotalSeqFrames() == 4, "duration shrank by one");
+            _doc.AbortDrag(); // nothing open: safe no-op
+            AuditInvariants("trim-drag");
+            Undo();
+            AuditCheck(TotalSeqFrames() == 5, "drag-trim undone in one step");
+        });
+        AuditStep("splice.split-reverse-hold", () =>
+        {
+            _doc.New("Splice2");
+            var a = _doc.AddClip(A(), 1.0);
+            var b = _doc.AddClip(B(), 1.0);
+            RebuildSequence();
+            int totalBefore = TotalSeqFrames();
+            SelectSeqTarget(SeqTargetKind.Clip, a.Id);
+            _engine.SeekFrame(2);
+            SplitAtPlayhead();
+            AuditCheck(_doc.Project.Clips.Count == 3, "split produced two clips from one");
+            AuditCheck(TotalSeqFrames() == totalBefore, "1x split preserves total");
+            _seqSelectedClip = b.Id;
+            SelectSeqTarget(SeqTargetKind.Clip, b.Id);
+            ReverseSelected();
+            var rb = _seqResolved.First(x => x.Clip.Id == b.Id);
+            AuditCheck(rb.Reversed, "clip reversed");
+            SetHoldForSelection(6);
+            var rb2 = _seqResolved.First(x => x.Clip.Id == b.Id);
+            AuditCheck(rb2.OutputFrames == rb.OutputFrames + 6, "hold extends duration");
+            AuditCheck(rb2.Map.SourceAt(rb2.OutputFrames - 1) == rb2.Map.HoldSource, "hold repeats final frame");
+            TogglePlay(); AuditTick(10); TogglePlay(); // playback across trim/split/reverse/hold
+            AuditCheck(!_engine.IsPlaying, "paused after tick");
+            AuditInvariants("split-playback");
+            _engine.SeekFrame(2); // back to the seam
+            SplitAtPlayhead(); // at seam: harmless no-op
+            AuditCheck(_doc.Project.Clips.Count == 3, "seam split changes nothing");
+            AuditShot("audit-04-split-hold");
+            // No phantom undo entry for the no-op: undos revert hold, reverse, split in order.
+            Undo();
+            AuditCheck(_doc.Project.Clips.First(x => x.Id == b.Id).TailHoldFrames == 0, "hold undone first");
+            Undo();
+            AuditCheck(!_doc.Project.Clips.First(x => x.Id == b.Id).Reversed, "reverse undone");
+            Undo();
+            AuditCheck(_doc.Project.Clips.Count == 2, "split undone");
+            AuditInvariants("split-reverse-hold");
+        });
+        await AuditStepAsync("splice.save-reopen", async () =>
+        {
+            _doc.New("SpliceSave");
+            var a = _doc.AddClip(A(), 1.0);
+            _doc.SetTrim(a.Id, 2, 6, _loader!.Catalog.GetFrameRegions(A()).Count);
+            var b = _doc.AddClip(B(), 1.0);
+            _doc.SetReversed(b.Id, true, _loader.Catalog.GetFrameRegions(B()).Count);
+            _doc.SetTailHold(b.Id, 4, _loader.Catalog.GetFrameRegions(B()).Count);
+            RebuildSequence();
+            int clipsBefore = _doc.Project.Clips.Count;
+            int framesBefore = TotalSeqFrames();
+            string sp = Path.Combine(dir, "splice-roundtrip.dcanim");
+            ProjectSerializer.Save(_doc.Project, sp);
+            _doc.MarkSaved(sp);
+            _doc.New("Empty");
+            RebuildSequence();
+            AuditCheck(TotalSeqFrames() == 0, "emptied");
+            await OpenProjectFileAsync(sp);
+            AuditCheck(_doc.Project.Clips.Count == clipsBefore, "clips survive reopen");
+            AuditCheck(TotalSeqFrames() == framesBefore, "frames survive reopen");
+            var ra = _seqResolved.First(x => x.Clip.AnimationId == A());
+            AuditCheck(ra.SourceFirst == 2 && ra.SourceFrames == 5, "trim survives reopen");
+            var rbb = _seqResolved.First(x => x.Clip.AnimationId == B());
+            AuditCheck(rbb.Reversed && rbb.TailHoldFrames == 4, "reverse+hold survive reopen");
+            AuditInvariants("splice-save-reopen");
+        });
+        AuditStep("splice.copy-paste-delete", () =>
+        {
+            _doc.New("Splice3");
+            _doc.AddClip(A(), 1.0);
+            _doc.AddClip(B(), 1.0);
+            RebuildSequence();
+            int n0 = TotalSeqFrames();
+            SetFrameSelection(2, 7);
+            CopySelection();
+            PasteAtPlayhead();
+            AuditCheck(TotalSeqFrames() == n0 + 5, "paste inserted 5 frames");
+            Undo();
+            AuditCheck(TotalSeqFrames() == n0, "paste undone");
+            Redo();
+            AuditCheck(TotalSeqFrames() == n0 + 5, "paste redone");
+            SetFrameSelection(2, 7);
+            DeleteSelection();
+            AuditCheck(TotalSeqFrames() == n0, "delete removed the pasted range");
+            ClearFrameSelection();
+            DuplicateSelection(); // no selection, no clip target: safe toast
+            AuditCheck(TotalSeqFrames() == n0, "duplicate with no target is a no-op");
+            AuditInvariants("copy-paste-delete");
+        });
+        AuditStep("splice.ripple-policy", () =>
+        {
+            _doc.New("Ripple");
+            _doc.AddClip(A(), 1.0);
+            var fxPath = Path.Combine(dir, "shot.png");
+            var fx = _doc.AddEffect(fxPath, 4, 6);
+            var au = _doc.AddAudio(wavPath, 1.0);
+            RebuildSequence();
+            AuditCheck(_doc.Project.RippleFxAudio, "ripple defaults on");
+            SetFrameSelection(0, 2);
+            DeleteSelection(); // ripple: fx/audio shift -2
+            var fxAfter = _doc.Project.Effects.First(e => e.Id == fx.Id);
+            AuditCheck(fxAfter.StartFrame == 2, "effect rippled with delete");
+            var auAfter = _doc.Project.Audio.First(a => a.Id == au.Id);
+            AuditCheck(Math.Abs(auAfter.StartSeconds - (1.0 - 2.0 / 30.0)) < 1e-9, "audio rippled with delete");
+            Undo();
+            _doc.SetRipple(false);
+            SetFrameSelection(0, 2);
+            DeleteSelection();
+            fxAfter = _doc.Project.Effects.First(e => e.Id == fx.Id);
+            AuditCheck(fxAfter.StartFrame == 4, "ripple off: effect stays absolute");
+            Undo();
+            _doc.SetRipple(true);
+            UpdateRippleMenu();
+            ClearFrameSelection();
+            AuditInvariants("ripple");
+        });
+        AuditStep("splice.onion-preview", () =>
+        {
+            _doc.New("Onion");
+            _doc.AddClip(A(), 1.0);
+            _doc.AddClip(B(), 1.0);
+            RebuildSequence();
+            _engine.SeekFrame(3);
+            SetOnionEnabled(true);
+            SetOnionCount(2);
+            SetOnionOpacity(0.35);
+            RefreshFrame();
+            AuditCheck(Viewport.Preview.OnionPrevious is { Count: 2 }, "two past ghosts");
+            AuditCheck(Viewport.Preview.OnionNext is { Count: 2 }, "two future ghosts");
+            _engine.SeekFrame(0);
+            RefreshFrame();
+            AuditCheck(Viewport.Preview.OnionPrevious is { Count: 0 }, "clamped at start");
+            AuditShot("audit-05-onion");
+            // Onion skins never reach exports: frame count follows the clip.
+            var rs = new RenderedSequence(_seqRendered!.Width, _seqRendered.Height,
+                _seqClip!.Frames.Select(f => f.Rgba).ToList());
+            AuditCheck(rs.Frames.Count == _seqClip.FrameCount, "export source unaffected by onion");
+            SetOnionEnabled(false);
+            AuditInvariants("onion");
+        });
+        AuditStep("splice.selection-state", () =>
+        {
+            _doc.New("Sel");
+            _doc.AddClip(A(), 1.0);
+            _doc.AddClip(B(), 1.0);
+            RebuildSequence();
+            SetFrameSelection(1, 4);
+            AuditCheck(HasFrameSelection, "selection set");
+            // Structural edits invalidate/keep the selection sanely.
+            _doc.New("Sel2");
+            RebuildSequence();
+            AuditCheck(!HasFrameSelection, "new project clears selection");
+            SetFrameSelection(0, 100000);
+            DeleteSelection(); // clamped to the sequence
+            AuditCheck(TotalSeqFrames() == 0, "oversized range deletes all");
+            AuditCheck(!HasFrameSelection, "selection cleared after delete");
+            AuditInvariants("selection-state");
+            // Exports below run on a spliced project (trim + reverse + hold).
+            var repop = _doc.AddClip(A(), 1.0);
+            var repopB = _doc.AddClip(B(), 1.0);
+            RebuildSequence();
+            SelectSeqTarget(SeqTargetKind.Clip, repopB.Id);
+            SetTrimForSelection(2, 6);
+            SetHoldForSelection(3);
+            SelectSeqTarget(SeqTargetKind.Clip, repop.Id);
+        });
         AuditStep("export.png-sequence", () =>
         {
             var rs = new RenderedSequence(_seqRendered!.Width, _seqRendered.Height,
@@ -921,8 +1132,30 @@ public sealed partial class MainWindow
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { threw = true; }
             AuditCheck(threw, "illegal-char path rejected");
         });
-
-        AuditShot("audit-final-state");
+        await AuditStepAsync("export.final-showcase", async () =>
+        {
+            // Finale: a genuinely spliced Katana sequence with trim, reverse,
+            // hold, effect, audio and onion skins — the evidence screenshot.
+            _doc.New("Spliced Finale");
+            var fa = _doc.AddClip("AtkKatanaA", 1.0);
+            _doc.SetTrim(fa.Id, 0, 7, _loader!.Catalog.GetFrameRegions("AtkKatanaA").Count);
+            var fb = _doc.AddClip(B(), 1.0);
+            _doc.SetReversed(fb.Id, true, _loader.Catalog.GetFrameRegions(B()).Count);
+            _doc.SetTailHold(fb.Id, 4, _loader.Catalog.GetFrameRegions(B()).Count);
+            var fx = _doc.AddEffect(Path.Combine(dir, "shot.png"), 4, 8);
+            _doc.AddAudio(wavPath, 0.25);
+            RebuildSequence();
+            SelectSeqTarget(SeqTargetKind.Clip, fb.Id);
+            _engine.SeekFrame(TotalSeqFrames() / 2);
+            SetOnionEnabled(true);
+            SetOnionCount(2);
+            RefreshFrame();
+            AuditCheck(TotalSeqFrames() > 0, "finale populated");
+            // Let transient toasts expire so the evidence shot is clean.
+            await Task.Delay(6500);
+            AuditShot("audit-final-state");
+            SetOnionEnabled(false);
+        });
         await FinishAuditAsync();
     }
 

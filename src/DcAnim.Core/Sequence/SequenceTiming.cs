@@ -27,6 +27,32 @@ public static class SequenceTiming
         return Math.Max(1, (int)Math.Round(sourceFrames * projectFps / (NativeFps * speed), MidpointRounding.AwayFromZero));
     }
 
+    /// <summary>
+    /// Output frame count including freeze holds: resampled base outputs for
+    /// the visible sources plus lead/tail repeats (which need no resampling).
+    /// </summary>
+    public static int ClipOutputFrames(int visibleSources, double speed, double projectFps, int leadHold, int tailHold)
+    {
+        if (leadHold < 0)
+            throw new ArgumentOutOfRangeException(nameof(leadHold));
+        if (tailHold < 0)
+            throw new ArgumentOutOfRangeException(nameof(tailHold));
+        return ClipOutputFrames(visibleSources, speed, projectFps) + leadHold + tailHold;
+    }
+
+    /// <summary>
+    /// Visible source count after clamping a trim to the available frames.
+    /// Never negative: returns 0 when there is nothing to show.
+    /// </summary>
+    public static int VisibleSourceFrames(int sourceCount, int first, int? last)
+    {
+        if (sourceCount <= 0)
+            return 0;
+        int f = Math.Clamp(first, 0, sourceCount - 1);
+        int l = Math.Clamp(last ?? (sourceCount - 1), f, sourceCount - 1);
+        return l - f + 1;
+    }
+
     /// <summary>Source frame index shown by output frame <paramref name="k"/>.</summary>
     public static int SourceIndex(int k, int sourceFrames, int outputFrames)
     {
@@ -35,6 +61,54 @@ public static class SequenceTiming
         if (sourceFrames <= 0 || outputFrames <= 0)
             throw new ArgumentOutOfRangeException("Frame counts must be positive.");
         return Math.Min(sourceFrames - 1, (int)((long)k * sourceFrames / outputFrames));
+    }
+
+    /// <summary>
+    /// Output→source mapping for one spliced clip, including trim, reverse
+    /// and hold zones. The single choke point shared by the renderer,
+    /// viewport overlay, timeline labels and keyframe remapping, so preview
+    /// and exports agree by construction.
+    /// <para/>
+    /// Layout of the <see cref="TotalOutputs"/> frames: <see cref="LeadHold"/>
+    /// repeats of the first displayed frame, then <see cref="BaseOutputs"/>
+    /// resampled frames over the visible source range, then
+    /// <see cref="TailHold"/> repeats of the final displayed frame.
+    /// </summary>
+    public readonly record struct SpliceMap(
+        int SourceFirst,
+        int VisibleCount,
+        bool Reversed,
+        int LeadHold,
+        int BaseOutputs,
+        int TailHold)
+    {
+        public int TotalOutputs => LeadHold + BaseOutputs + TailHold;
+
+        public int SourceLast => SourceFirst + VisibleCount - 1;
+
+        /// <summary>Source shown by hold zones: first displayed when reversed, else last.</summary>
+        public int HoldSource => Reversed ? SourceFirst : SourceLast;
+
+        /// <summary>0-based source frame shown by output frame <paramref name="k"/>.</summary>
+        public int SourceAt(int k)
+        {
+            if (VisibleCount <= 0)
+                throw new ArgumentOutOfRangeException(nameof(k), "No visible source frames.");
+            if (BaseOutputs <= 0)
+                throw new ArgumentOutOfRangeException(nameof(k), "No base output frames.");
+            if (LeadHold < 0 || TailHold < 0)
+                throw new ArgumentOutOfRangeException("Hold counts must not be negative.");
+            if (k < 0 || k >= TotalOutputs)
+                throw new ArgumentOutOfRangeException(nameof(k));
+            int v;
+            if (k < LeadHold)
+                v = 0;
+            else if (k < LeadHold + BaseOutputs)
+                v = SourceIndex(k - LeadHold, VisibleCount, BaseOutputs);
+            else
+                v = VisibleCount - 1;
+            return SourceFirst + (Reversed ? VisibleCount - 1 - v : v);
+        }
     }
 
     /// <summary>Start output frame of each clip for a contiguous track.</summary>

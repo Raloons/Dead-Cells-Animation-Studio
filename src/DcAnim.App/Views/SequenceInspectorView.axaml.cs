@@ -20,6 +20,10 @@ public sealed partial class SequenceInspectorView : UserControl
     public event Action<double>? ProjectFpsChanged;
     public event Action<string>? ProjectRenamed;
     public event Action<Transform>? ClipTransformCommitted;
+    public event Action<int>? ClipTrimInChanged; // 1-based source frame
+    public event Action<int>? ClipTrimOutChanged; // 1-based source frame, inclusive
+    public event Action<bool>? ClipReversedChanged;
+    public event Action<int>? ClipHoldChanged; // tail hold output frames
     public event Action<TransformProperty>? KeyAddRequested;
     public event Action<TransformProperty, int>? KeyDeleteRequested;
     public event Action<TransformProperty, int>? KeySelected;
@@ -41,6 +45,10 @@ public sealed partial class SequenceInspectorView : UserControl
     public event Action<bool>? AudioMutedChanged;
     public event Action? AudioRelinkRequested;
     public event Action? AudioRemoveRequested;
+
+    public event Action<bool>? OnionEnabledChanged;
+    public event Action<int>? OnionCountChanged;
+    public event Action<double>? OnionOpacityChanged;
 
     private bool _syncing;
 
@@ -107,6 +115,15 @@ public sealed partial class SequenceInspectorView : UserControl
         AuRelinkButton.Click += (_, _) => AudioRelinkRequested?.Invoke();
         AuRemoveButton.Click += (_, _) => AudioRemoveRequested?.Invoke();
 
+        ClipTrimIn.ValueChanged += (_, _) => { if (!_syncing && ClipTrimIn.Value is { } v) ClipTrimInChanged?.Invoke(Math.Max(1, (int)v)); };
+        ClipTrimOut.ValueChanged += (_, _) => { if (!_syncing && ClipTrimOut.Value is { } v) ClipTrimOutChanged?.Invoke(Math.Max(1, (int)v)); };
+        ClipReverse.IsCheckedChanged += (_, _) => { if (!_syncing) ClipReversedChanged?.Invoke(ClipReverse.IsChecked == true); };
+        ClipHold.ValueChanged += (_, _) => { if (!_syncing && ClipHold.Value is { } v) ClipHoldChanged?.Invoke(Math.Max(0, (int)v)); };
+
+        OnionEnabled.IsCheckedChanged += (_, _) => { if (!_syncing) OnionEnabledChanged?.Invoke(OnionEnabled.IsChecked == true); };
+        OnionCount.ValueChanged += (_, _) => { if (!_syncing && OnionCount.Value is { } v) OnionCountChanged?.Invoke(Math.Clamp((int)v, 1, 3)); };
+        OnionOpacity.ValueChanged += (_, _) => { if (!_syncing) OnionOpacityChanged?.Invoke(OnionOpacity.Value); };
+
         ClearAll();
     }
 
@@ -135,7 +152,9 @@ public sealed partial class SequenceInspectorView : UserControl
     }
 
     public void ShowClip(string animationId, double speed, int outputFrames, double fps,
-        Transform baseTransform, IReadOnlyList<TransformKeyframe> keys)
+        Transform baseTransform, IReadOnlyList<TransformKeyframe> keys,
+        int sourceFirstOneBased, int sourceLastOneBased, int sourceCount,
+        bool reversed, int tailHold)
     {
         ClipSection.IsVisible = true;
         EffectSection.IsVisible = false;
@@ -147,6 +166,20 @@ public sealed partial class SequenceInspectorView : UserControl
             ClipSpeed.Value = (decimal)speed;
             SyncPreset(speed);
             ClipFrames.Text = $"{outputFrames} frames · {outputFrames / fps:F3} s";
+            ClipTrimIn.Value = Math.Max(1, sourceFirstOneBased);
+            ClipTrimOut.Value = Math.Max(1, sourceLastOneBased);
+            ClipTrimIn.Maximum = Math.Max(1, sourceCount);
+            ClipTrimOut.Maximum = Math.Max(1, sourceCount);
+            bool knownSources = sourceCount > 0;
+            ClipTrimIn.IsEnabled = knownSources;
+            ClipTrimOut.IsEnabled = knownSources;
+            ClipReverse.IsChecked = reversed;
+            ClipHold.Value = Math.Max(0, tailHold);
+            ClipMapping.Text = knownSources
+                ? $"Src {sourceFirstOneBased}–{sourceLastOneBased} of {sourceCount}" +
+                  (reversed ? " · reversed" : "") +
+                  (tailHold > 0 ? $" · +{tailHold} hold" : "")
+                : "Source frames unknown (missing animation)";
             ClipTransform.SetTransform(baseTransform);
             KeyList.ItemsSource = keys
                 .OrderBy(k => k.Property).ThenBy(k => k.Frame)
@@ -230,7 +263,8 @@ public sealed partial class SequenceInspectorView : UserControl
             KeyList.ScrollIntoView(KeyList.SelectedItem);
     }
 
-    public void ShowProject(string name, double fps, int clipCount, int totalFrames)
+    public void ShowProject(string name, double fps, int clipCount, int totalFrames,
+        bool onionEnabled, int onionCount, double onionOpacity)
     {
         _syncing = true;
         try
@@ -240,6 +274,9 @@ public sealed partial class SequenceInspectorView : UserControl
             ProjectFps.Value = (decimal)fps;
             SeqClips.Text = clipCount.ToString();
             SeqTotal.Text = $"{totalFrames} frames · {totalFrames / fps:F3} s";
+            OnionEnabled.IsChecked = onionEnabled;
+            OnionCount.Value = Math.Clamp(onionCount, 1, 3);
+            OnionOpacity.Value = onionOpacity;
         }
         finally
         {

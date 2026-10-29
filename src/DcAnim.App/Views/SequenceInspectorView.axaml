@@ -9,7 +9,7 @@
           <TextBlock Text="CLIP" Classes="ws-panel-header" Margin="0"/>
         </Expander.Header>
         <StackPanel Spacing="4">
-          <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto">
+          <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
             <TextBlock Grid.Row="0" Grid.Column="0" Text="Animation" Classes="ws-prop-label"/>
             <TextBlock Grid.Row="0" Grid.Column="1" x:Name="ClipAnim" Classes="ws-prop-value" Text="—"/>
             <TextBlock Grid.Row="1" Grid.Column="0" Text="Speed" Classes="ws-prop-label" VerticalAlignment="Center"/>
@@ -29,6 +29,23 @@
             </ComboBox>
             <TextBlock Grid.Row="3" Grid.Column="0" Text="Frames" Classes="ws-prop-label"/>
             <TextBlock Grid.Row="3" Grid.Column="1" x:Name="ClipFrames" Classes="ws-prop-value" Text="—"/>
+            <TextBlock Grid.Row="4" Grid.Column="0" Text="Source In" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Row="4" Grid.Column="1" x:Name="ClipTrimIn" Minimum="1" Maximum="100000"
+                           FormatString="0" Width="110" HorizontalAlignment="Left"
+                           ToolTip.Tip="First visible native frame (1-based; the native animation is never modified)"/>
+            <TextBlock Grid.Row="5" Grid.Column="0" Text="Source Out" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Row="5" Grid.Column="1" x:Name="ClipTrimOut" Minimum="1" Maximum="100000"
+                           FormatString="0" Width="110" HorizontalAlignment="Left"
+                           ToolTip.Tip="Last visible native frame (1-based, inclusive)"/>
+            <TextBlock Grid.Row="6" Grid.Column="0" Text="Reverse" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <CheckBox Grid.Row="6" Grid.Column="1" x:Name="ClipReverse" Content="Play backward"
+                      ToolTip.Tip="Play the visible source range in reverse"/>
+            <TextBlock Grid.Row="7" Grid.Column="0" Text="Tail hold" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Row="7" Grid.Column="1" x:Name="ClipHold" Minimum="0" Maximum="10000"
+                           FormatString="0" Width="110" HorizontalAlignment="Left"
+                           ToolTip.Tip="Repeat the final displayed frame this many extra output frames"/>
+            <TextBlock Grid.Row="8" Grid.Column="0" Text="Mapping" Classes="ws-prop-label"/>
+            <TextBlock Grid.Row="8" Grid.Column="1" x:Name="ClipMapping" Classes="ws-prop-value" FontSize="11" Text="—"/>
           </Grid>
           <TextBlock Text="TRANSFORM" Classes="ws-panel-header" Margin="0,6,0,0"/>
           <views:TransformEditorView x:Name="ClipTransform"/>
@@ -123,7 +140,7 @@
         <Expander.Header>
           <TextBlock Text="SEQUENCE" Classes="ws-panel-header" Margin="0"/>
         </Expander.Header>
-        <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto">
+        <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
           <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" Classes="ws-prop-label" VerticalAlignment="Center"/>
           <TextBox Grid.Row="0" Grid.Column="1" x:Name="ProjectName" Watermark="Sequence name"
                    ToolTip.Tip="Project name (saved in the .dcanim file)"/>
@@ -135,6 +152,16 @@
           <TextBlock Grid.Row="2" Grid.Column="1" x:Name="SeqClips" Classes="ws-prop-value" Text="—"/>
           <TextBlock Grid.Row="3" Grid.Column="0" Text="Total" Classes="ws-prop-label"/>
           <TextBlock Grid.Row="3" Grid.Column="1" x:Name="SeqTotal" Classes="ws-prop-value" Text="—"/>
+          <TextBlock Grid.Row="4" Grid.Column="0" Text="Onion skins" Classes="ws-prop-label" VerticalAlignment="Center"/>
+          <CheckBox Grid.Row="4" Grid.Column="1" x:Name="OnionEnabled" Content="Show neighbors"
+                    ToolTip.Tip="Preview-only ghost frames around the playhead (never exported)"/>
+          <TextBlock Grid.Row="5" Grid.Column="0" Text="Onion count" Classes="ws-prop-label" VerticalAlignment="Center"/>
+          <NumericUpDown Grid.Row="5" Grid.Column="1" x:Name="OnionCount" Minimum="1" Maximum="3"
+                         FormatString="0" Width="110" HorizontalAlignment="Left"
+                         ToolTip.Tip="Neighbor frames per side (1–3)"/>
+          <TextBlock Grid.Row="6" Grid.Column="0" Text="Onion opacity" Classes="ws-prop-label" VerticalAlignment="Center"/>
+          <Slider Grid.Row="6" Grid.Column="1" x:Name="OnionOpacity" Minimum="0.15" Maximum="0.6" Width="130"
+                  HorizontalAlignment="Left" ToolTip.Tip="Ghost frame opacity"/>
         </Grid>
       </Expander>
     </StackPanel>

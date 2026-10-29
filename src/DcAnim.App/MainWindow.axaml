@@ -40,6 +40,16 @@
               <MenuItem x:Name="UndoItem" Header="Undo" InputGesture="Ctrl+Z"/>
               <MenuItem x:Name="RedoItem" Header="Redo" InputGesture="Ctrl+Y"/>
               <Separator/>
+              <MenuItem x:Name="SplitItem" Header="Split clip at playhead" InputGesture="Ctrl+K"/>
+              <MenuItem x:Name="CopyRangeItem" Header="Copy frames" InputGesture="Ctrl+C"/>
+              <MenuItem x:Name="CutRangeItem" Header="Cut frames" InputGesture="Ctrl+X"/>
+              <MenuItem x:Name="PasteRangeItem" Header="Paste frames" InputGesture="Ctrl+V"/>
+              <MenuItem x:Name="DeleteRangeItem" Header="Delete frames" InputGesture="Delete"/>
+              <MenuItem x:Name="DuplicateRangeItem" Header="Duplicate frames/clip" InputGesture="Ctrl+D"/>
+              <MenuItem x:Name="ReverseItem" Header="Reverse clip" InputGesture="R"/>
+              <MenuItem x:Name="RippleItem" Header="Ripple effects/audio" ToggleType="CheckBox" IsChecked="True"
+                        ToolTip.Tip="Shift effects and audio when edits change the total duration"/>
+              <Separator/>
               <MenuItem x:Name="PlayPauseItem" Header="Play / pause" InputGesture="Space"/>
               <MenuItem x:Name="PrevFrameItem" Header="Previous frame" InputGesture="Left"/>
               <MenuItem x:Name="NextFrameItem" Header="Next frame" InputGesture="Right"/>
@@ -49,6 +59,8 @@
             <MenuItem Header="_View">
               <MenuItem x:Name="CheckerItem" Header="Checkerboard background" InputGesture="Ctrl+B"
                         ToggleType="CheckBox" IsChecked="True"/>
+              <MenuItem x:Name="OnionItem" Header="Onion skins" ToggleType="CheckBox" IsChecked="False"
+                        ToolTip.Tip="Preview-only ghost frames around the playhead"/>
               <MenuItem x:Name="FitItem" Header="Fit preview to view" InputGesture="Ctrl+0"/>
               <MenuItem x:Name="TimelineZoomInItem" Header="Timeline zoom in"/>
               <MenuItem x:Name="TimelineZoomOutItem" Header="Timeline zoom out"/>

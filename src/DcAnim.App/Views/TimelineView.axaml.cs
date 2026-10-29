@@ -33,6 +33,18 @@ public sealed partial class TimelineView : UserControl
     public event Action? SeqKeyframeDragStarted;
     public event Action? SeqKeyframeDragFinished;
     public event Action? SeqDragCancelled;
+    public event Action<string, bool>? SeqTrimDragStarted;
+    public event Action<string, bool, int>? SeqTrimming;
+    public event Action? SeqTrimDragFinished;
+    public event Action<int, int>? SeqFrameRangeSelected;
+    public event Action<int>? SeqSeekRequested;
+    public event Action? SeqSplitRequested;
+    public event Action? SeqReverseRequested;
+    public event Action<int>? SeqHoldRequested;
+    public event Action? SeqFrameCopyRequested;
+    public event Action? SeqFrameCutRequested;
+    public event Action? SeqFramePasteRequested;
+    public event Action? SeqFrameDeleteRequested;
 
     public bool IsSequenceMode { get; private set; }
 
@@ -57,6 +69,18 @@ public sealed partial class TimelineView : UserControl
         SeqTrack.KeyframeDragStarted += () => SeqKeyframeDragStarted?.Invoke();
         SeqTrack.KeyframeDragFinished += () => SeqKeyframeDragFinished?.Invoke();
         SeqTrack.DragCancelled += () => SeqDragCancelled?.Invoke();
+        SeqTrack.TrimDragStarted += (id, left) => SeqTrimDragStarted?.Invoke(id, left);
+        SeqTrack.Trimming += (id, left, g) => SeqTrimming?.Invoke(id, left, g);
+        SeqTrack.TrimDragFinished += () => SeqTrimDragFinished?.Invoke();
+        SeqTrack.FrameRangeSelected += (a, b) => SeqFrameRangeSelected?.Invoke(a, b);
+        SeqTrack.SeekRequested += g => SeqSeekRequested?.Invoke(g);
+        SeqTrack.SplitRequested += () => SeqSplitRequested?.Invoke();
+        SeqTrack.ReverseRequested += () => SeqReverseRequested?.Invoke();
+        SeqTrack.HoldRequested += h => SeqHoldRequested?.Invoke(h);
+        SeqTrack.FrameCopyRequested += () => SeqFrameCopyRequested?.Invoke();
+        SeqTrack.FrameCutRequested += () => SeqFrameCutRequested?.Invoke();
+        SeqTrack.FramePasteRequested += () => SeqFramePasteRequested?.Invoke();
+        SeqTrack.FrameDeleteRequested += () => SeqFrameDeleteRequested?.Invoke();
         ZoomSlider.ValueChanged += (_, _) =>
         {
             if (!_settingZoom)
@@ -163,7 +187,9 @@ public sealed partial class TimelineView : UserControl
         SequenceTrackControl.KeyMarker? selectedKey,
         bool showEffectKeys,
         int currentFrame,
-        double fps)
+        double fps,
+        int frameSelStart,
+        int frameSelEnd)
     {
         SeqTrack.Clips = blocks;
         SeqTrack.Effects = effects;
@@ -176,6 +202,8 @@ public sealed partial class TimelineView : UserControl
         SeqTrack.ShowEffectKeys = showEffectKeys;
         SeqTrack.CurrentFrame = currentFrame;
         SeqTrack.Fps = fps;
+        SeqTrack.FrameSelStart = frameSelStart;
+        SeqTrack.FrameSelEnd = frameSelEnd;
         _timelineUserZoomed = false;
         LayoutTrack();
         AutoFitOnLayout();

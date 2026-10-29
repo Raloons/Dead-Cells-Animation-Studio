@@ -229,7 +229,7 @@ public static class SequenceCompositor
             for (int k = 0; k < r.OutputFrames; k++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                int src = SequenceTiming.SourceIndex(k, r.SourceFrames, r.OutputFrames);
+                int src = r.Map.SourceAt(k);
                 var native1 = native.Get(loader, r.Clip.AnimationId, src, project.Fps);
                 var transform = r.Clip.EvaluateAt(k);
                 using var surface = SKSurface.Create(new SKImageInfo(w, h, SKColorType.Rgba8888, SKAlphaType.Unpremul));

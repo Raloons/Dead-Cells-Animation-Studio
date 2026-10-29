@@ -22,7 +22,12 @@ public sealed class SequenceTrackControl : Control
         string AnimationId,
         int StartFrame,
         int FrameCount,
-        IList<Bitmap> Thumbs);
+        IList<Bitmap> Thumbs,
+        int SourceFirst,
+        int SourceCount,
+        int SourceTotal,
+        bool Reversed,
+        int HoldExtra);
 
     public sealed record FxBlock(
         string EffectId,
@@ -77,6 +82,16 @@ public sealed class SequenceTrackControl : Control
     public static readonly StyledProperty<double> FpsProperty =
         AvaloniaProperty.Register<SequenceTrackControl, double>(nameof(Fps), 30.0);
 
+    /// <summary>
+    /// Inclusive frame-range selection (global output frames). -1/-1 = none.
+    /// Set by the host; rendered as a highlight across ruler and clip lane.
+    /// </summary>
+    public static readonly StyledProperty<int> FrameSelStartProperty =
+        AvaloniaProperty.Register<SequenceTrackControl, int>(nameof(FrameSelStart), -1);
+
+    public static readonly StyledProperty<int> FrameSelEndProperty =
+        AvaloniaProperty.Register<SequenceTrackControl, int>(nameof(FrameSelEnd), -1);
+
     public const double RulerHeight = 26.0;
     public const double ClipLaneHeight = 56.0;
     public const double FxLaneHeight = 42.0;
@@ -117,13 +132,34 @@ public sealed class SequenceTrackControl : Control
     private bool _dragging;
     private int _dropIndex = -1; // library drop target, -1 = none
     private double _dropX;        // internal-drag indicator position
+    private const double TrimHandle = 6.0;
+    private (string ClipId, bool IsLeft)? _hoverTrim;
+    private string? _trimClipId;
+    private bool _trimLeft;
+    private int _rangeAnchor = -1; // shift-drag range selection anchor (global frame)
+    private bool _rulerPress;
+
+    private static readonly IBrush RangeBrush = new SolidColorBrush(Color.FromArgb(36, 0xE8, 0xE8, 0xEC));
+
+    private static string ClipLabel(ClipBlock c)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(c.AnimationId).Append(" · ").Append(c.FrameCount).Append('f');
+        if (c.SourceFirst > 0 || c.SourceCount < c.SourceTotal)
+            sb.Append(" · ").Append(c.SourceFirst + 1).Append('–').Append(c.SourceFirst + c.SourceCount);
+        if (c.Reversed)
+            sb.Append(" · REV");
+        if (c.HoldExtra > 0)
+            sb.Append(" · +").Append(c.HoldExtra).Append('H');
+        return sb.ToString();
+    }
 
     static SequenceTrackControl()
     {
         AffectsRender<SequenceTrackControl>(ClipsProperty, SelectedClipIdProperty,
             EffectsProperty, SelectedEffectIdProperty, AudioProperty, SelectedAudioIdProperty,
             KeyframesProperty, SelectedKeyProperty, CurrentFrameProperty,
-            PixelsPerFrameProperty, FpsProperty);
+            PixelsPerFrameProperty, FpsProperty, FrameSelStartProperty, FrameSelEndProperty);
     }
 
     public event Action<string>? ClipSelected;
@@ -145,6 +181,18 @@ public sealed class SequenceTrackControl : Control
     /// <summary>Raised when an in-progress gesture is lost (e.g. pointer
     /// capture stolen); hosts must abort any open coalesced undo group.</summary>
     public event Action? DragCancelled;
+    public event Action<string, bool>? TrimDragStarted; // clipId, isLeftEdge
+    public event Action<string, bool, int>? Trimming; // clipId, isLeftEdge, globalFrame
+    public event Action? TrimDragFinished;
+    public event Action<int, int>? FrameRangeSelected; // start, endExclusive (global)
+    public event Action<int>? SeekRequested; // exact frame from ruler click
+    public event Action? SplitRequested;
+    public event Action? ReverseRequested;
+    public event Action<int>? HoldRequested; // tail hold frames, 0 = clear
+    public event Action? FrameCopyRequested;
+    public event Action? FrameCutRequested;
+    public event Action? FramePasteRequested;
+    public event Action? FrameDeleteRequested;
 
     public IList<ClipBlock>? Clips { get => GetValue(ClipsProperty); set => SetValue(ClipsProperty, value); }
     public string? SelectedClipId { get => GetValue(SelectedClipIdProperty); set => SetValue(SelectedClipIdProperty, value); }
@@ -155,6 +203,8 @@ public sealed class SequenceTrackControl : Control
     public IList<KeyMarker>? Keyframes { get => GetValue(KeyframesProperty); set => SetValue(KeyframesProperty, value); }
     public KeyMarker? SelectedKey { get => GetValue(SelectedKeyProperty); set => SetValue(SelectedKeyProperty, value); }
     public bool ShowEffectKeys { get => GetValue(ShowEffectKeysProperty); set => SetValue(ShowEffectKeysProperty, value); }
+    public int FrameSelStart { get => GetValue(FrameSelStartProperty); set => SetValue(FrameSelStartProperty, value); }
+    public int FrameSelEnd { get => GetValue(FrameSelEndProperty); set => SetValue(FrameSelEndProperty, value); }
 
     public int CurrentFrame { get => GetValue(CurrentFrameProperty); set => SetValue(CurrentFrameProperty, value); }
     public double PixelsPerFrame { get => GetValue(PixelsPerFrameProperty); set => SetValue(PixelsPerFrameProperty, Math.Clamp(value, 8.0, 128.0)); }
@@ -244,6 +294,14 @@ public sealed class SequenceTrackControl : Control
             }
         }
 
+        // Frame-range selection highlight (ruler + clip lane).
+        if (FrameSelStart >= 0 && FrameSelEnd > FrameSelStart)
+        {
+            double sx = FrameX(FrameSelStart);
+            double ex = FrameX(Math.Min(FrameSelEnd, total));
+            context.FillRectangle(RangeBrush, new Rect(sx, 0, Math.Max(1, ex - sx), LaneTop + ClipLaneHeight));
+        }
+
         // Clip blocks.
         if (clips is not null)
         {
@@ -270,7 +328,38 @@ public sealed class SequenceTrackControl : Control
                         context.DrawImage(thumb, new Rect(0, 0, thumb.PixelSize.Width, thumb.PixelSize.Height), dest);
                     }
                 }
-                DrawTrimmed(context, $"{c.AnimationId} · {c.FrameCount}f", x + 4, LaneTop + 3, Math.Max(0, w - 6));
+                DrawTrimmed(context, ClipLabel(c), x + 4, LaneTop + 3, Math.Max(0, w - 6));
+                // Per-frame source indexes at high zoom (1-based, deterministic).
+                if (ppf >= 28 && c.FrameCount > 0 && c.FrameCount <= 240 && c.HoldExtra >= 0)
+                {
+                    try
+                    {
+                        int visible = Math.Max(1, c.SourceCount);
+                        int lead = 0;
+                        int baseN = Math.Max(1, c.FrameCount - c.HoldExtra);
+                        var map = new SequenceTiming.SpliceMap(c.SourceFirst, visible, c.Reversed, lead, baseN, Math.Max(0, c.HoldExtra));
+                        for (int g = 0; g < c.FrameCount; g++)
+                        {
+                            int src = map.SourceAt(g);
+                            var num = new FormattedText((src + 1).ToString(),
+                                System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                                Typeface.Default, 9, TextBrush);
+                            double nx = FrameX(c.StartFrame + g) + (ppf - num.Width) / 2;
+                            context.DrawText(num, new Point(nx, LaneTop + ClipLaneHeight - num.Height - 3));
+                        }
+                    }
+                    catch (ArgumentOutOfRangeException) { /* transient state: skip labels */ }
+                }
+                // Trim handles on the selected clip (hover highlight).
+                if (selected && w > 24)
+                {
+                    bool hoverL = _hoverTrim is { IsLeft: true, ClipId: var hl } && hl == c.ClipId;
+                    bool hoverR = _hoverTrim is { IsLeft: false, ClipId: var hr } && hr == c.ClipId;
+                    context.FillRectangle(hoverL ? KeySelectedBrush : TickBrush,
+                        new Rect(x + 1, LaneTop + 1, TrimHandle, ClipLaneHeight - 2));
+                    context.FillRectangle(hoverR ? KeySelectedBrush : TickBrush,
+                        new Rect(x + w - TrimHandle - 1, LaneTop + 1, TrimHandle, ClipLaneHeight - 2));
+                }
             }
         }
 
@@ -397,7 +486,7 @@ public sealed class SequenceTrackControl : Control
         context.DrawText(label, new Point(x, y));
     }
 
-    private enum HitKind { None, Key, Clip, Effect, Audio }
+    private enum HitKind { None, Key, Clip, Effect, Audio, TrimLeft, TrimRight, Ruler }
 
     private (HitKind Kind, string? Id, TransformProperty Prop, int Frame) HitTest(Point pos)
     {
@@ -418,6 +507,26 @@ public sealed class SequenceTrackControl : Control
                 }
             }
         }
+        // Trim handles on the selected clip's edges.
+        if (y >= LaneTop && y < LaneTop + ClipLaneHeight && Clips is not null)
+        {
+            foreach (var c in Clips)
+            {
+                if (c.ClipId != SelectedClipId)
+                    continue;
+                double w = c.FrameCount * PixelsPerFrame;
+                if (w <= 24)
+                    break;
+                double x0 = FrameX(c.StartFrame);
+                if (x >= x0 && x < x0 + TrimHandle)
+                    return (HitKind.TrimLeft, c.ClipId, default, 0);
+                if (x >= x0 + w - TrimHandle && x < x0 + w)
+                    return (HitKind.TrimRight, c.ClipId, default, 0);
+            }
+        }
+        // Ruler (for exact seeking) sits above the lanes.
+        if (y >= 0 && y < LaneTop && TotalFrames > 0)
+            return (HitKind.Ruler, null, default, 0);
         // Lanes.
         if (y >= AudioTop && Audio is not null)
         {
@@ -458,7 +567,7 @@ public sealed class SequenceTrackControl : Control
             // A press arrived while a gesture was still open (e.g. lost
             // release): recycle it as a cancellation so host undo state
             // cannot leak an open coalesce group.
-            bool wasActive = _dragging || _pressArmed;
+            bool wasActive = _dragging || _pressArmed || _trimClipId is not null || _rangeAnchor >= 0;
             ResetDragState();
             if (wasActive)
                 DragCancelled?.Invoke();
@@ -468,21 +577,44 @@ public sealed class SequenceTrackControl : Control
             return;
         _pressPoint = e.GetPosition(this);
         var hit = HitTest(_pressPoint.Value);
+        bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         _dragClipId = hit.Kind == HitKind.Clip ? hit.Id : null;
         _dragEffectId = hit.Kind == HitKind.Effect ? hit.Id : null;
         _dragAudioId = hit.Kind == HitKind.Audio ? hit.Id : null;
         _dragKey = hit.Kind == HitKind.Key ? (hit.Prop, hit.Frame) : null;
         _dragKeyIsEffect = ShowEffectKeys;
+        _trimClipId = hit.Kind is HitKind.TrimLeft or HitKind.TrimRight ? hit.Id : null;
+        _trimLeft = hit.Kind == HitKind.TrimLeft;
+        _rulerPress = hit.Kind == HitKind.Ruler;
+        _rangeAnchor = -1;
+        if (shift && hit.Kind is HitKind.Clip or HitKind.Ruler or HitKind.Effect or HitKind.Audio)
+        {
+            // Shift+drag selects an output-frame range; the plain click path
+            // below is bypassed so selection never fights seeking.
+            _rangeAnchor = FrameAtX(_pressPoint.Value.X);
+            _dragClipId = _dragEffectId = _dragAudioId = null;
+            _trimClipId = null;
+            _rulerPress = false;
+        }
         _dragging = false;
         _pressArmed = hit.Kind == HitKind.Key;
         e.Pointer.Capture(this);
         e.Handled = true;
     }
 
+    private int FrameAtX(double x)
+    {
+        int total = TotalFrames;
+        if (total <= 0)
+            return 0;
+        return Math.Clamp((int)Math.Floor((x - OriginX) / PixelsPerFrame), 0, total - 1);
+    }
+
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     {
         base.OnPointerCaptureLost(e);
-        bool wasActive = _pressPoint is not null && (_dragging || _pressArmed);
+        bool wasActive = _pressPoint is not null &&
+            (_dragging || _pressArmed || _trimClipId is not null || _rangeAnchor >= 0);
         ResetDragState();
         if (wasActive)
             DragCancelled?.Invoke();
@@ -496,6 +628,9 @@ public sealed class SequenceTrackControl : Control
         _dragging = false;
         _pressArmed = false;
         _dropIndex = -1;
+        _trimClipId = null;
+        _rangeAnchor = -1;
+        _rulerPress = false;
         InvalidateVisual();
     }
 
@@ -503,7 +638,19 @@ public sealed class SequenceTrackControl : Control
     {
         base.OnPointerMoved(e);
         if (_pressPoint is null)
+        {
+            // Hover feedback for trim handles.
+            var hov = HitTest(e.GetPosition(this));
+            var want = hov.Kind is HitKind.TrimLeft or HitKind.TrimRight
+                ? (hov.Id!, hov.Kind == HitKind.TrimLeft) : ((string, bool)?)null;
+            if (want != _hoverTrim)
+            {
+                _hoverTrim = want;
+                Cursor = want is null ? null : new Cursor(StandardCursorType.SizeWestEast);
+                InvalidateVisual();
+            }
             return;
+        }
         var pos = e.GetPosition(this);
         var dx = pos.X - _pressPoint.Value.X;
         var dy = pos.Y - _pressPoint.Value.Y;
@@ -516,10 +663,26 @@ public sealed class SequenceTrackControl : Control
                 _pressArmed = false;
                 KeyframeDragStarted?.Invoke();
             }
+            if (_trimClipId is not null)
+                TrimDragStarted?.Invoke(_trimClipId, _trimLeft);
         }
         if (!_dragging)
             return;
 
+        if (_rangeAnchor >= 0)
+        {
+            // Range selection: anchor frame to current frame under the cursor.
+            int cur = FrameAtX(pos.X);
+            int a = Math.Min(_rangeAnchor, cur);
+            int b = Math.Max(_rangeAnchor, cur) + 1;
+            FrameRangeSelected?.Invoke(a, Math.Min(b, Math.Max(1, TotalFrames)));
+            return;
+        }
+        if (_trimClipId is not null)
+        {
+            Trimming?.Invoke(_trimClipId, _trimLeft, FrameAtX(pos.X));
+            return;
+        }
         if (_dragKey is { } key)
         {
             // Move keyframe: snap to frame, coalesced by the host.
@@ -552,7 +715,18 @@ public sealed class SequenceTrackControl : Control
         var pos = e.GetPosition(this);
         if (_dragging)
         {
-            if (_dragKey is not null)
+            if (_rangeAnchor >= 0)
+            {
+                int cur = FrameAtX(pos.X);
+                int a = Math.Min(_rangeAnchor, cur);
+                int b = Math.Max(_rangeAnchor, cur) + 1;
+                FrameRangeSelected?.Invoke(a, Math.Min(b, Math.Max(1, TotalFrames)));
+            }
+            else if (_trimClipId is not null)
+            {
+                TrimDragFinished?.Invoke();
+            }
+            else if (_dragKey is not null)
             {
                 KeyframeDragFinished?.Invoke();
             }
@@ -579,13 +753,29 @@ public sealed class SequenceTrackControl : Control
         }
         else
         {
-            var hit = HitTest(pos);
-            switch (hit.Kind)
+            if (_rangeAnchor >= 0)
             {
-                case HitKind.Clip when hit.Id is { } id: ClipSelected?.Invoke(id); break;
-                case HitKind.Effect when hit.Id is { } id: EffectSelected?.Invoke(id); break;
-                case HitKind.Audio when hit.Id is { } id: AudioSelected?.Invoke(id); break;
-                case HitKind.Key: KeyframeSelected?.Invoke(hit.Prop, hit.Frame, ShowEffectKeys); break;
+                // Shift+click without drag: single-frame selection.
+                int f = FrameAtX(pos.X);
+                FrameRangeSelected?.Invoke(f, Math.Min(f + 1, Math.Max(1, TotalFrames)));
+            }
+            else if (_rulerPress)
+            {
+                SeekRequested?.Invoke(FrameAtX(pos.X));
+            }
+            else
+            {
+                var hit = HitTest(pos);
+                switch (hit.Kind)
+                {
+                    case HitKind.Clip when hit.Id is { } id: ClipSelected?.Invoke(id); break;
+                    case HitKind.Effect when hit.Id is { } id: EffectSelected?.Invoke(id); break;
+                    case HitKind.Audio when hit.Id is { } id: AudioSelected?.Invoke(id); break;
+                    case HitKind.Key: KeyframeSelected?.Invoke(hit.Prop, hit.Frame, ShowEffectKeys); break;
+                    case HitKind.Ruler: SeekRequested?.Invoke(FrameAtX(pos.X)); break;
+                    case HitKind.TrimLeft when hit.Id is { } tl: ClipSelected?.Invoke(tl); break;
+                    case HitKind.TrimRight when hit.Id is { } tr: ClipSelected?.Invoke(tr); break;
+                }
             }
         }
         _pressArmed = false;
@@ -640,6 +830,38 @@ public sealed class SequenceTrackControl : Control
         menu.Items.Add(remove);
         menu.Items.Add(new Separator());
         menu.Items.Add(speedMenu);
+        var splitItem = new MenuItem { Header = "Split clip at playhead  (Ctrl+K)" };
+        splitItem.Click += (_, _) => SplitRequested?.Invoke();
+        var reverseItem = new MenuItem { Header = "Reverse clip" };
+        reverseItem.Click += (_, _) => ReverseRequested?.Invoke();
+        var holdMenu = new MenuItem { Header = "Hold last frame…" };
+        foreach (int h in new[] { 2, 6, 12, 30 })
+        {
+            int hold = h;
+            var hi = new MenuItem { Header = $"+{hold} frames" };
+            hi.Click += (_, _) => HoldRequested?.Invoke(hold);
+            holdMenu.Items.Add(hi);
+        }
+        var clearHold = new MenuItem { Header = "Clear hold" };
+        clearHold.Click += (_, _) => HoldRequested?.Invoke(0);
+        holdMenu.Items.Add(clearHold);
+        menu.Items.Add(splitItem);
+        menu.Items.Add(reverseItem);
+        menu.Items.Add(holdMenu);
+        menu.Items.Add(new Separator());
+        var copyItem = new MenuItem { Header = "Copy frames  (Ctrl+C)" };
+        copyItem.Click += (_, _) => FrameCopyRequested?.Invoke();
+        var cutItem = new MenuItem { Header = "Cut frames  (Ctrl+X)" };
+        cutItem.Click += (_, _) => FrameCutRequested?.Invoke();
+        var pasteItem = new MenuItem { Header = "Paste frames  (Ctrl+V)" };
+        pasteItem.Click += (_, _) => FramePasteRequested?.Invoke();
+        var deleteItem = new MenuItem { Header = "Delete frames  (Del)" };
+        deleteItem.Click += (_, _) => FrameDeleteRequested?.Invoke();
+        menu.Items.Add(copyItem);
+        menu.Items.Add(cutItem);
+        menu.Items.Add(pasteItem);
+        menu.Items.Add(deleteItem);
+        menu.Items.Add(new Separator());
         menu.Items.Add(new Separator());
         menu.Items.Add(removeFx);
         menu.Items.Add(removeAu);

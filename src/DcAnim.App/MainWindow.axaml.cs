@@ -56,6 +56,17 @@ public sealed partial class MainWindow : Window
     private readonly Stopwatch _dragThrottle = new();
     private bool _closingConfirmed;
 
+    // Frame-level editing state (global output frames, end-exclusive).
+    private int _frameSelStart = -1;
+    private int _frameSelEnd = -1;
+    private bool HasFrameSelection => _seqMode && _frameSelStart >= 0 && _frameSelEnd > _frameSelStart;
+    private List<SequenceDocument.SpliceSegment> _clipboard = new();
+
+    private int SourceCount(string animationId) =>
+        _loader!.Catalog.GetFrameRegions(animationId).Count;
+
+    private Func<string, int> SourceCounter => SourceCount;
+
     private AnimationClip? ActiveClip => _seqMode ? _seqClip : _clip;
     private int ActiveFrameCount => ActiveClip?.FrameCount ?? 0;
 
@@ -84,10 +95,67 @@ public sealed partial class MainWindow : Window
         Timeline.ScrubRequested += f => { if (CanTransport) { _engine.Scrub(f); RefreshFrame(); } };
         Timeline.SeqClipSelected += OnSeqClipSelected;
         Timeline.SeqClipMoved += (id, i) => { _doc.MoveClip(id, i); AfterStructuralEdit(); };
-        Timeline.SeqLibraryDrop += (animId, i) => { var c = _doc.AddClip(animId, 1.0, i); _seqSelectedClip = c.Id; SelectSeqTarget(SeqTargetKind.Clip, c.Id, seekToStart: false); RebuildSequence(); };
-        Timeline.SeqRemoveRequested += id => { _doc.RemoveClip(id); AfterStructuralEdit(); };
-        Timeline.SeqDuplicateRequested += id => { var c = _doc.DuplicateClip(id); _seqSelectedClip = c.Id; AfterStructuralEdit(); };
-        Timeline.SeqSpeedRequested += (id, s) => { _doc.SetClipSpeed(id, s); RebuildSequence(); };
+        Timeline.SeqLibraryDrop += (animId, i) =>
+        {
+            if (_loader is null)
+                return;
+            int at = IndexStartFrame(i);
+            StructuralEdit("Add clip", at, () =>
+            {
+                var c = _doc.AddClip(animId, 1.0, i);
+                _seqSelectedClip = c.Id;
+                SelectSeqTarget(SeqTargetKind.Clip, c.Id, seekToStart: false);
+            });
+        };
+        Timeline.SeqRemoveRequested += id =>
+        {
+            var r = _seqResolved.FirstOrDefault(x => x.Clip.Id == id);
+            int at = r?.StartFrame ?? 0;
+            StructuralEdit("Remove clip", at, () => _doc.RemoveClip(id));
+        };
+        Timeline.SeqDuplicateRequested += id =>
+        {
+            var r = _seqResolved.FirstOrDefault(x => x.Clip.Id == id);
+            int at = (r?.StartFrame ?? 0) + (r?.OutputFrames ?? 0);
+            StructuralEdit("Duplicate clip", at, () =>
+            {
+                var c = _doc.DuplicateClip(id);
+                _seqSelectedClip = c.Id;
+            });
+        };
+        Timeline.SeqSpeedRequested += (id, s) =>
+        {
+            var r = _seqResolved.FirstOrDefault(x => x.Clip.Id == id);
+            int at = r?.StartFrame ?? 0;
+            try
+            {
+                StructuralEdit($"Speed {s:0.##}×", at, () => _doc.SetClipSpeed(id, s));
+            }
+            catch (Exception ex)
+            {
+                ShowToast(ex.Message);
+            }
+        };
+        Timeline.SeqTrimDragStarted += (_, _) => _doc.BeginDrag("Trim clip");
+        Timeline.SeqTrimming += OnTrimming;
+        Timeline.SeqTrimDragFinished += () => { _doc.EndDrag(); AfterStructuralEdit(); RefreshFrame(); };
+        Timeline.SeqFrameRangeSelected += SetFrameSelection;
+        Timeline.SeqSeekRequested += g =>
+        {
+            if (CanTransport)
+            {
+                ClearFrameSelection();
+                _engine.SeekFrame(Math.Clamp(g, 0, Math.Max(0, ActiveFrameCount - 1)));
+                RefreshFrame();
+            }
+        };
+        Timeline.SeqSplitRequested += SplitAtPlayhead;
+        Timeline.SeqReverseRequested += ReverseSelected;
+        Timeline.SeqHoldRequested += h => SetHoldForSelection(h);
+        Timeline.SeqFrameCopyRequested += CopySelection;
+        Timeline.SeqFrameCutRequested += CutSelection;
+        Timeline.SeqFramePasteRequested += PasteAtPlayhead;
+        Timeline.SeqFrameDeleteRequested += DeleteSelection;
         Timeline.SeqEffectSelected += OnSeqEffectSelected;
         Timeline.SeqEffectMoved += (id, f) => { _doc.MoveEffect(id, f); RebuildSequence(); };
         Timeline.SeqEffectRemoveRequested += id => { _doc.RemoveEffect(id); AfterStructuralEdit(); };
@@ -104,7 +172,27 @@ public sealed partial class MainWindow : Window
         Viewport.Preview.MoveFinished += OnViewportDragEnd;
         Viewport.Preview.MoveCancelled += () => { _moveBase = null; _doc.AbortDrag(); RebuildSequence(); RefreshFrame(); };
         Viewport.Preview.DoubleTapped += (_, _) => FitPreview();
-        SeqInspector.ClipSpeedChanged += s => { if (_seqTargetId is { } id && _seqTarget == SeqTargetKind.Clip) { _doc.SetClipSpeed(id, s); RebuildSequence(); } };
+        SeqInspector.ClipSpeedChanged += s =>
+        {
+            if (_seqTarget != SeqTargetKind.Clip)
+                return;
+            var r = _seqResolved.FirstOrDefault(x => x.Clip.Id == _seqTargetId);
+            try
+            {
+                StructuralEdit($"Speed {s:0.##}×", r?.StartFrame ?? 0, () => _doc.SetClipSpeed(_seqTargetId, s));
+            }
+            catch (Exception ex)
+            {
+                ShowToast(ex.Message);
+            }
+        };
+        SeqInspector.ClipTrimInChanged += v => SetTrimForSelection(v, null);
+        SeqInspector.ClipTrimOutChanged += v => SetTrimForSelection(null, v);
+        SeqInspector.ClipReversedChanged += rev => SetReverseForSelection(rev);
+        SeqInspector.ClipHoldChanged += h => SetHoldForSelection(h);
+        SeqInspector.OnionEnabledChanged += on => SetOnionEnabled(on);
+        SeqInspector.OnionCountChanged += n => SetOnionCount(n);
+        SeqInspector.OnionOpacityChanged += o => SetOnionOpacity(o);
         SeqInspector.ProjectFpsChanged += f => { _doc.SetFps(f); RebuildSequence(); };
         SeqInspector.ProjectRenamed += n => { _doc.Rename(n); UpdateTitle(); };
         SeqInspector.ClipTransformCommitted += t => { if (_seqTarget == SeqTargetKind.Clip) { _doc.SetClipTransform(_seqTargetId, t); RebuildSequence(); } };
@@ -153,10 +241,19 @@ public sealed partial class MainWindow : Window
             if (ActiveFrameCount > 0) { _engine.SeekFrame(ActiveFrameCount - 1); RefreshFrame(); }
         };
         CheckerItem.Click += (_, _) => Viewport.Preview.ShowChecker = CheckerItem.IsChecked;
+        OnionItem.Click += (_, _) => SetOnionEnabled(OnionItem.IsChecked == true);
         FitItem.Click += (_, _) => FitPreview();
         TimelineZoomInItem.Click += (_, _) => Timeline.ZoomIn();
         TimelineZoomOutItem.Click += (_, _) => Timeline.ZoomOut();
         ResetLayoutItem.Click += (_, _) => ResetLayout();
+        SplitItem.Click += (_, _) => SplitAtPlayhead();
+        CopyRangeItem.Click += (_, _) => CopySelection();
+        CutRangeItem.Click += (_, _) => CutSelection();
+        PasteRangeItem.Click += (_, _) => PasteAtPlayhead();
+        DeleteRangeItem.Click += (_, _) => DeleteSelection();
+        DuplicateRangeItem.Click += (_, _) => DuplicateSelection();
+        ReverseItem.Click += (_, _) => ReverseSelected();
+        RippleItem.Click += (_, _) => { _doc.SetRipple(RippleItem.IsChecked == true); UpdateRippleMenu(); };
         FormatNotesItem.Click += async (_, _) => await ShowFormatNotesAsync();
         ShortcutsItem.Click += async (_, _) => await ShowShortcutsAsync();
         AboutItem.Click += async (_, _) => await ShowAboutAsync();
@@ -507,6 +604,7 @@ public sealed partial class MainWindow : Window
             Timeline.SetSequencePosition(_engine.CurrentFrameIndex, clip.FrameCount);
             UpdateSequenceSubtitle();
             UpdateViewportOverlay();
+            UpdateOnionSkins();
             SyncAudio();
         }
         else
@@ -515,6 +613,27 @@ public sealed partial class MainWindow : Window
             Inspector.SetPosition(_engine.CurrentFrameIndex, clip.FrameCount, frame?.RegionName ?? "—");
         }
         Transport.SetPlaying(_engine.IsPlaying);
+    }
+
+    /// <summary>
+    /// Onion-skin neighbors from the already-composed sequence bitmaps (no
+    /// re-decode). Preview-only: exporters consume <see cref="_seqRendered"/>
+    /// directly and never see these.
+    /// </summary>
+    private void UpdateOnionSkins()
+    {
+        if (!_settings.OnionEnabled || _seqClip is null || _seqClip.FrameCount == 0 ||
+            _seqBitmaps.Count != _seqClip.FrameCount)
+        {
+            Viewport.Preview.OnionPrevious = null;
+            Viewport.Preview.OnionNext = null;
+            return;
+        }
+        var (prev, next) = TimelineMath.OnionFrames(
+            _engine.CurrentFrameIndex, _seqClip.FrameCount, _settings.OnionCount);
+        Viewport.Preview.OnionPrevious = prev.Select(i => (Bitmap)_seqBitmaps[i]).ToList();
+        Viewport.Preview.OnionNext = next.Select(i => (Bitmap)_seqBitmaps[i]).ToList();
+        Viewport.Preview.OnionOpacity = _settings.OnionOpacity;
     }
 
     /// <summary>Editor-only selection overlay (pivot cross + transformed bounds).</summary>
@@ -544,7 +663,7 @@ public sealed partial class MainWindow : Window
                 return;
             int local = g - r.StartFrame;
             var native = _nativeCache.Get(_loader!, clip.AnimationId,
-                SequenceTiming.SourceIndex(local, r.SourceFrames, r.OutputFrames), _doc.Project.Fps);
+                r.Map.SourceAt(local), _doc.Project.Fps);
             var t = clip.EvaluateAt(local);
             var (x, y, w, h) = TransformLayout.MapRect(native.Width, native.Height, t,
                 _seqRendered.Width, _seqRendered.Height);
@@ -583,9 +702,13 @@ public sealed partial class MainWindow : Window
         if (r is null)
             return;
         int local = g - r.StartFrame + 1;
+        string splice = (r.Reversed ? " · REV" : "") +
+            (r.TailHoldFrames > 0 ? $" · +{r.TailHoldFrames}H" : "") +
+            (r.LeadHoldFrames > 0 ? $" · {r.LeadHoldFrames}H+" : "") +
+            (HasFrameSelection ? $" · sel {_frameSelStart + 1}–{_frameSelEnd}" : "");
         Viewport.SetTitle(_doc.Project.Name,
             $"Clip {r.ClipIndex + 1}/{_seqResolved.Count} · {r.Clip.AnimationId} " +
-            $"frame {local}/{r.OutputFrames} · {r.Clip.Speed:0.##}× · {_seqClip.Frames[0].Width}×{_seqClip.Frames[0].Height} px · {_doc.Project.Fps:0.#} FPS");
+            $"frame {local}/{r.OutputFrames}{splice} · {r.Clip.Speed:0.##}× · {_seqClip.Frames[0].Width}×{_seqClip.Frames[0].Height} px · {_doc.Project.Fps:0.#} FPS");
     }
 
     private readonly DispatcherTimer _toastTimer;
@@ -677,8 +800,16 @@ public sealed partial class MainWindow : Window
             ("Space", "Play / pause"),
             ("← / →", "Previous / next frame"),
             ("Home / End", "First / last frame"),
-            ("Delete", "Remove selected clip / effect / audio"),
+            ("Delete", "Delete selected frames, or selected clip / effect / audio"),
+            ("Esc", "Clear frame selection"),
             ("Ctrl+Z / Ctrl+Y", "Undo / redo (sequence edits)"),
+            ("Ctrl+K", "Split clip at playhead"),
+            ("Ctrl+C / Ctrl+X / Ctrl+V", "Copy / cut / paste frames"),
+            ("Ctrl+D", "Duplicate frames or clip"),
+            ("R", "Reverse selected clip"),
+            ("Shift+drag timeline", "Select a frame range"),
+            ("Ruler click", "Seek to exact frame"),
+            ("Drag clip edges", "Trim source In/Out"),
             ("Ctrl+F", "Focus animation search"),
             ("Ctrl+0", "Fit preview to view"),
             ("Ctrl+B", "Toggle checkerboard background"),
@@ -807,6 +938,26 @@ public sealed partial class MainWindow : Window
                     Redo();
                     e.Handled = true;
                     break;
+                case Key.K:
+                    SplitAtPlayhead();
+                    e.Handled = true;
+                    break;
+                case Key.C:
+                    CopySelection();
+                    e.Handled = true;
+                    break;
+                case Key.X:
+                    CutSelection();
+                    e.Handled = true;
+                    break;
+                case Key.V:
+                    PasteAtPlayhead();
+                    e.Handled = true;
+                    break;
+                case Key.D:
+                    DuplicateSelection();
+                    e.Handled = true;
+                    break;
                 case Key.N:
                     _ = NewProjectAsync();
                     e.Handled = true;
@@ -836,6 +987,14 @@ public sealed partial class MainWindow : Window
 
         switch (e.Key)
         {
+            case Key.Escape when _frameSelStart >= 0:
+                ClearFrameSelection();
+                e.Handled = true;
+                break;
+            case Key.R when _seqMode:
+                ReverseSelected();
+                e.Handled = true;
+                break;
             case Key.Space when !onButton && CanTransport:
                 TogglePlay();
                 e.Handled = true;
@@ -866,16 +1025,29 @@ public sealed partial class MainWindow : Window
             case Key.Delete:
                 if (_seqMode)
                 {
-                    if (_seqTarget == SeqTargetKind.Clip && _seqTargetId is { } dc)
-                        _doc.RemoveClip(dc);
+                    if (HasFrameSelection)
+                    {
+                        DeleteSelection();
+                        e.Handled = true;
+                    }
+                    else if (_seqTarget == SeqTargetKind.Clip && _seqTargetId is { } dc2)
+                    {
+                        var rr = _seqResolved.FirstOrDefault(x => x.Clip.Id == dc2);
+                        StructuralEdit("Remove clip", rr?.StartFrame ?? 0, () => _doc.RemoveClip(dc2));
+                        e.Handled = true;
+                    }
                     else if (_seqTarget == SeqTargetKind.Effect && _seqTargetId is { } de)
+                    {
                         _doc.RemoveEffect(de);
+                        AfterStructuralEdit();
+                        e.Handled = true;
+                    }
                     else if (_seqTarget == SeqTargetKind.Audio && _seqTargetId is { } da)
+                    {
                         _doc.RemoveAudio(da);
-                    else
-                        break;
-                    AfterStructuralEdit();
-                    e.Handled = true;
+                        AfterStructuralEdit();
+                        e.Handled = true;
+                    }
                 }
                 break;
         }
@@ -907,6 +1079,7 @@ public sealed partial class MainWindow : Window
         MainGrid.ColumnDefinitions[4].Width = new GridLength(_settings.ClampedRightWidth);
         TimelinePanel.Height = _settings.ClampedTimelineHeight;
         CheckerItem.IsChecked = true;
+        OnionItem.IsChecked = _settings.OnionEnabled;
         if (_settings.WindowWidth is { } w && _settings.WindowHeight is { } h)
         {
             Width = Math.Clamp(w, MinWidth, 2560);
@@ -1156,8 +1329,12 @@ public sealed partial class MainWindow : Window
                         thumbs.Add(_seqBitmaps[g]);
                 }
             }
+            int total = 0;
+            try { total = _loader is null ? 0 : SourceCount(r.Clip.AnimationId); } catch { }
             blocks.Add(new SequenceTrackControl.ClipBlock(
-                r.Clip.Id, r.Clip.AnimationId, r.StartFrame, r.OutputFrames, thumbs));
+                r.Clip.Id, r.Clip.AnimationId, r.StartFrame, r.OutputFrames, thumbs,
+                r.SourceFirst, r.SourceFrames, total, r.Reversed,
+                r.LeadHoldFrames + r.TailHoldFrames));
         }
         return blocks;
     }
@@ -1258,6 +1435,7 @@ public sealed partial class MainWindow : Window
 
     private void RefreshSequenceTimeline(int currentFrame)
     {
+        ValidateFrameSelection();
         var blocks = BuildBlocks();
         var fxBlocks = BuildFxBlocks();
         var auBlocks = BuildAudioBlocks();
@@ -1267,7 +1445,9 @@ public sealed partial class MainWindow : Window
             _seqTarget == SeqTargetKind.Audio ? _seqTargetId : null,
             BuildKeyMarkers(), BuildSelectedKey(),
             showEffectKeys: _seqTarget != SeqTargetKind.Clip,
-            currentFrame, _doc.Project.Fps);
+            currentFrame, _doc.Project.Fps,
+            HasFrameSelection ? _frameSelStart : -1,
+            HasFrameSelection ? _frameSelEnd : -1);
     }
 
     private void AfterStructuralEdit()
@@ -1276,6 +1456,475 @@ public sealed partial class MainWindow : Window
             ClearSeqTarget();
         RebuildSequence();
     }
+
+    private int TotalSeqFrames() => _seqResolved.Sum(r => r.OutputFrames);
+
+    private int IndexStartFrame(int clipIndex)
+    {
+        if (clipIndex >= _seqResolved.Count)
+            return TotalSeqFrames();
+        if (clipIndex <= 0)
+            return 0;
+        return _seqResolved[clipIndex].StartFrame;
+    }
+
+    /// <summary>
+    /// Run a timeline-mutating edit plus ripple as one undo step, then
+    /// refresh every surface. No-op with a toast when no game source is
+    /// loaded; failures abort the group and toast instead of crashing.
+    /// </summary>
+    private void StructuralEdit(string label, int ripplePoint, Action edit)
+    {
+        if (_loader is null)
+        {
+            ShowToast("Open a game source first.");
+            return;
+        }
+        int before;
+        try
+        {
+            before = SequenceComposer.TotalFrames(_doc.Project, SourceCounter);
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Cannot resolve sequence: {ex.Message}");
+            return;
+        }
+        _doc.BeginGroup(label);
+        try
+        {
+            edit();
+            int after = SequenceComposer.TotalFrames(_doc.Project, SourceCounter);
+            if (_doc.Project.RippleFxAudio && after != before)
+                _doc.ShiftFxAudio(ripplePoint, after - before);
+            _doc.EndGroupIfChanged(); // no-op edits leave no undo step
+        }
+        catch (Exception ex)
+        {
+            _doc.AbortGroup();
+            ShowToast(ex.Message);
+        }
+        AfterStructuralEdit();
+        RefreshFrame();
+    }
+
+    // ---------- frame selection ----------
+
+    private void SetFrameSelection(int start, int end)
+    {
+        int total = TotalSeqFrames();
+        if (total <= 0)
+        {
+            ClearFrameSelection();
+            return;
+        }
+        _frameSelStart = Math.Clamp(start, 0, total - 1);
+        _frameSelEnd = Math.Clamp(end, _frameSelStart + 1, total);
+        RefreshSequenceTimeline(_engine.CurrentFrameIndex);
+    }
+
+    private void ClearFrameSelection()
+    {
+        if (_frameSelStart < 0)
+            return;
+        _frameSelStart = _frameSelEnd = -1;
+        RefreshSequenceTimeline(_engine.CurrentFrameIndex);
+    }
+
+    private void ValidateFrameSelection()
+    {
+        int total = TotalSeqFrames();
+        if (!HasFrameSelection || total <= 0)
+        {
+            _frameSelStart = _frameSelEnd = -1;
+            return;
+        }
+        _frameSelStart = Math.Clamp(_frameSelStart, 0, total - 1);
+        _frameSelEnd = Math.Clamp(_frameSelEnd, _frameSelStart + 1, total);
+    }
+
+    // ---------- splicing operations ----------
+
+    private void OnTrimming(string clipId, bool isLeft, int globalFrame)
+    {
+        try
+        {
+            var r = _seqResolved.FirstOrDefault(x => x.Clip.Id == clipId);
+            if (r is null || _loader is null)
+                return;
+            int count = SourceCount(r.Clip.AnimationId);
+            int local = Math.Clamp(globalFrame - r.StartFrame, 0, Math.Max(0, r.OutputFrames - 1));
+            int src = r.Map.SourceAt(local);
+            int resolvedLast = r.SourceFirst + r.SourceFrames - 1;
+            if (isLeft)
+                _doc.SetTrim(clipId, Math.Min(src, resolvedLast), r.Clip.SourceLast, count);
+            else
+                _doc.SetTrim(clipId, r.Clip.SourceFirst, Math.Max(src, r.Clip.SourceFirst), count);
+            RebuildSequence();
+            RefreshFrame();
+        }
+        catch (Exception ex)
+        {
+            _doc.AbortDrag();
+            ShowToast(ex.Message);
+            RebuildSequence();
+        }
+    }
+
+    private void SplitAtPlayhead()
+    {
+        if (!_seqMode || _loader is null)
+            return;
+        int g = _engine.CurrentFrameIndex;
+        if (g < 0)
+        {
+            ShowToast("Nothing to split: the sequence is empty.");
+            return;
+        }
+        SequenceDocument.SplitResult? result = null;
+        StructuralEdit("Split clip", g, () =>
+        {
+            result = _doc.SplitAt(g, SourceCounter);
+        });
+        if (result is null)
+        {
+            ShowToast("Playhead is at a clip edge — nothing to split.");
+            return;
+        }
+        var right = _seqResolved.FirstOrDefault(r => r.Clip.Id == result.RightId);
+        if (right is not null)
+        {
+            _engine.SeekFrame(Math.Min(right.StartFrame, Math.Max(0, TotalSeqFrames() - 1)));
+            SelectSeqTarget(SeqTargetKind.Clip, result.RightId, seekToStart: false);
+            RefreshFrame();
+        }
+        if (result.DroppedKeys > 0)
+            ShowToast($"Split dropped {result.DroppedKeys} out-of-range keyframe(s); undo restores them.");
+    }
+
+    private bool TryFrameRange(out int start, out int end)
+    {
+        start = _frameSelStart;
+        end = _frameSelEnd;
+        return HasFrameSelection && end <= TotalSeqFrames();
+    }
+
+    private void CopySelection()
+    {
+        if (!_seqMode || _loader is null)
+            return;
+        try
+        {
+            List<SequenceDocument.SpliceSegment> segments;
+            if (TryFrameRange(out int s, out int e))
+            {
+                segments = _doc.CopyRange(s, e, SourceCounter).ToList();
+            }
+            else
+            {
+                var r = _seqTarget == SeqTargetKind.Clip
+                    ? _seqResolved.FirstOrDefault(x => x.Clip.Id == _seqTargetId)
+                    : _seqResolved.FirstOrDefault(x => x.Clip.Id == _seqSelectedClip);
+                if (r is null)
+                {
+                    ShowToast("Select frames or a clip first.");
+                    return;
+                }
+                segments = _doc.CopyRange(r.StartFrame, r.StartFrame + r.OutputFrames, SourceCounter).ToList();
+            }
+            if (segments.Count == 0)
+            {
+                ShowToast("Nothing to copy: the range is empty.");
+                return;
+            }
+            _clipboard = segments;
+            ShowToast($"Copied {segments.Count} segment(s), {segments.Sum(x => x.SourceLast - x.SourceFirst + 1)} source frames.");
+        }
+        catch (Exception ex)
+        {
+            ShowToast(ex.Message);
+        }
+    }
+
+    private void CutSelection()
+    {
+        if (!_seqMode || _loader is null)
+            return;
+        CopySelection();
+        if (_clipboard.Count == 0)
+            return;
+        DeleteSelection();
+    }
+
+    private void PasteAtPlayhead()
+    {
+        if (!_seqMode || _loader is null)
+            return;
+        if (_clipboard.Count == 0)
+        {
+            ShowToast("Clipboard is empty: copy frames first.");
+            return;
+        }
+        int at = Math.Max(0, _engine.CurrentFrameIndex);
+        int pastedTotal = 0;
+        foreach (var s in _clipboard)
+        {
+            pastedTotal += SequenceTiming.ClipOutputFrames(
+                s.SourceLast - s.SourceFirst + 1, s.Speed, _doc.Project.Fps,
+                s.LeadHoldFrames, s.TailHoldFrames);
+        }
+        List<SequenceClip>? created = null;
+        StructuralEdit($"Paste {pastedTotal} frames", at, () =>
+        {
+            created = _doc.PasteSegments(at, _clipboard, SourceCounter).ToList();
+        });
+        if (created is { Count: > 0 })
+        {
+            var last = created[^1];
+            var r = _seqResolved.FirstOrDefault(x => x.Clip.Id == last.Id);
+            _seqSelectedClip = last.Id;
+            SelectSeqTarget(SeqTargetKind.Clip, last.Id, seekToStart: false);
+            if (r is not null)
+                _engine.SeekFrame(Math.Min(r.StartFrame + r.OutputFrames, Math.Max(0, TotalSeqFrames() - 1)));
+            ClearFrameSelection();
+            RefreshFrame();
+        }
+    }
+
+    private void DeleteSelection()
+    {
+        if (!_seqMode || _loader is null)
+            return;
+        if (TryFrameRange(out int s, out int e))
+        {
+            int dropped = 0;
+            StructuralEdit("Delete frames", s, () =>
+            {
+                dropped = _doc.DeleteRange(s, e, SourceCounter);
+            });
+            if (dropped > 0)
+                ShowToast($"Delete dropped {dropped} out-of-range keyframe(s); undo restores them.");
+            ClearFrameSelection();
+            _engine.SeekFrame(Math.Min(Math.Max(0, s), Math.Max(0, TotalSeqFrames() - 1)));
+            RefreshFrame();
+            return;
+        }
+        // Fall back to the classic target removal.
+        if (_seqTarget == SeqTargetKind.Clip && _seqTargetId is { } dc)
+        {
+            var r = _seqResolved.FirstOrDefault(x => x.Clip.Id == dc);
+            StructuralEdit("Remove clip", r?.StartFrame ?? 0, () => _doc.RemoveClip(dc));
+        }
+        else if (_seqTarget == SeqTargetKind.Effect && _seqTargetId is { } de)
+        {
+            _doc.RemoveEffect(de);
+            AfterStructuralEdit();
+        }
+        else if (_seqTarget == SeqTargetKind.Audio && _seqTargetId is { } da)
+        {
+            _doc.RemoveAudio(da);
+            AfterStructuralEdit();
+        }
+    }
+
+    private void DuplicateSelection()
+    {
+        if (!_seqMode || _loader is null)
+            return;
+        if (TryFrameRange(out int s, out int e))
+        {
+            var segments = _doc.CopyRange(s, e, SourceCounter).ToList();
+            if (segments.Count == 0)
+            {
+                ShowToast("Nothing to duplicate.");
+                return;
+            }
+            StructuralEdit("Duplicate frames", e, () =>
+            {
+                _doc.PasteSegments(e, segments, SourceCounter);
+            });
+            ClearFrameSelection();
+            return;
+        }
+        var r = _seqTarget == SeqTargetKind.Clip
+            ? _seqResolved.FirstOrDefault(x => x.Clip.Id == _seqTargetId)
+            : null;
+        if (r is null)
+        {
+            ShowToast("Select frames or a clip first.");
+            return;
+        }
+        int at = r.StartFrame + r.OutputFrames;
+        StructuralEdit("Duplicate clip", at, () =>
+        {
+            var c = _doc.DuplicateClip(r.Clip.Id);
+            _seqSelectedClip = c.Id;
+        });
+    }
+
+    private void ReverseSelected()
+    {
+        if (!_seqMode || _loader is null)
+            return;
+        // A frame range reverses every clip it touches; otherwise the
+        // selected clip reverses.
+        List<(string Id, int Start)> targets = new();
+        if (TryFrameRange(out int s, out int e))
+        {
+            foreach (var r in _seqResolved)
+            {
+                if (e > r.StartFrame && s < r.StartFrame + r.OutputFrames)
+                    targets.Add((r.Clip.Id, r.StartFrame));
+            }
+            if (targets.Count == 0)
+            {
+                ShowToast("Nothing to reverse in the selected range.");
+                return;
+            }
+        }
+        else if (_seqTarget == SeqTargetKind.Clip && _seqResolved.Any(x => x.Clip.Id == _seqTargetId))
+        {
+            var r = _seqResolved.First(x => x.Clip.Id == _seqTargetId);
+            targets.Add((r.Clip.Id, r.StartFrame));
+        }
+        else
+        {
+            ShowToast("Select a clip or a frame range first.");
+            return;
+        }
+        int dropped = 0;
+        StructuralEdit(targets.Count > 1 ? $"Reverse {targets.Count} clips" : "Reverse clip",
+            targets.Min(t => t.Start), () =>
+            {
+                foreach (var (id, _) in targets)
+                {
+                    var clip = _doc.Project.Clips.First(x => x.Id == id);
+                    int count = SourceCount(clip.AnimationId);
+                    dropped += _doc.SetReversed(id, !clip.Reversed, count);
+                }
+            });
+        if (dropped > 0)
+            ShowToast($"Reverse dropped {dropped} keyframe(s); undo restores them.");
+    }
+
+    private void SetTrimForSelection(int? oneBasedFirst, int? oneBasedLast)
+    {
+        if (!_seqMode || _loader is null || _seqTarget != SeqTargetKind.Clip)
+            return;
+        var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
+        if (clip is null)
+            return;
+        int count;
+        try { count = SourceCount(clip.AnimationId); }
+        catch (Exception ex) { ShowToast(ex.Message); return; }
+        int first = oneBasedFirst.HasValue ? oneBasedFirst.Value - 1 : clip.SourceFirst;
+        int? last = oneBasedLast.HasValue ? oneBasedLast.Value - 1 : clip.SourceLast;
+        var r = _seqResolved.FirstOrDefault(x => x.Clip.Id == clip.Id);
+        int at = r?.StartFrame ?? 0;
+        int dropped = 0;
+        try
+        {
+            StructuralEdit("Trim clip", at, () =>
+            {
+                dropped = _doc.SetTrim(clip.Id, first, last, count);
+            });
+        }
+        catch (Exception ex)
+        {
+            ShowToast(ex.Message);
+            return;
+        }
+        if (dropped > 0)
+            ShowToast($"Trim dropped {dropped} out-of-range keyframe(s); undo restores them.");
+    }
+
+    private void SetReverseForSelection(bool reversed)
+    {
+        if (!_seqMode || _loader is null || _seqTarget != SeqTargetKind.Clip)
+            return;
+        var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
+        if (clip is null)
+            return;
+        int count;
+        try { count = SourceCount(clip.AnimationId); }
+        catch (Exception ex) { ShowToast(ex.Message); return; }
+        var r = _seqResolved.FirstOrDefault(x => x.Clip.Id == clip.Id);
+        int dropped = 0;
+        try
+        {
+            StructuralEdit(reversed ? "Reverse clip" : "Unreverse clip", r?.StartFrame ?? 0, () =>
+            {
+                dropped = _doc.SetReversed(clip.Id, reversed, count);
+            });
+        }
+        catch (Exception ex)
+        {
+            ShowToast(ex.Message);
+            return;
+        }
+        if (dropped > 0)
+            ShowToast($"Reverse dropped {dropped} keyframe(s); undo restores them.");
+        RefreshSequenceInspector();
+    }
+
+    private void SetHoldForSelection(int holdFrames)
+    {
+        if (!_seqMode || _loader is null)
+            return;
+        var r = _seqTarget == SeqTargetKind.Clip
+            ? _seqResolved.FirstOrDefault(x => x.Clip.Id == _seqTargetId)
+            : null;
+        if (r is null)
+        {
+            ShowToast("Select a clip first.");
+            return;
+        }
+        int count;
+        try { count = SourceCount(r.Clip.AnimationId); }
+        catch (Exception ex) { ShowToast(ex.Message); return; }
+        int validated = Math.Clamp(holdFrames, 0, SequenceClip.MaxHoldFrames);
+        int dropped = 0;
+        try
+        {
+            StructuralEdit(validated == 0 ? "Clear hold" : $"Hold {validated}f", r.StartFrame, () =>
+            {
+                dropped = _doc.SetTailHold(r.Clip.Id, validated, count);
+            });
+        }
+        catch (Exception ex)
+        {
+            ShowToast(ex.Message);
+            return;
+        }
+        if (dropped > 0)
+            ShowToast($"Hold change dropped {dropped} keyframe(s); undo restores them.");
+    }
+
+    private void SetOnionEnabled(bool enabled)
+    {
+        _settings.OnionEnabled = enabled;
+        _settings.Save();
+        OnionItem.IsChecked = enabled;
+        RefreshSequenceInspector();
+        RefreshFrame();
+    }
+
+    private void SetOnionCount(int count)
+    {
+        _settings.OnionCount = Math.Clamp(count, 1, 3);
+        _settings.Save();
+        RefreshSequenceInspector();
+        RefreshFrame();
+    }
+
+    private void SetOnionOpacity(double opacity)
+    {
+        _settings.OnionOpacity = Math.Clamp(opacity, 0.15, 0.6);
+        _settings.Save();
+        RefreshFrame();
+    }
+
+    private void UpdateRippleMenu() => RippleItem.IsChecked = _doc.Project.RippleFxAudio;
 
     private bool SeqTargetExists() => _seqTarget switch
     {
@@ -1688,8 +2337,11 @@ public sealed partial class MainWindow : Window
                     SeqInspector.ShowNothing();
                     break;
                 }
+                int clipSources = SourceCountOrMinusOne(clip.AnimationId);
                 SeqInspector.ShowClip(clip.AnimationId, clip.Speed, r.OutputFrames, _doc.Project.Fps,
-                    clip.BaseTransform, clip.Keyframes);
+                    clip.BaseTransform, clip.Keyframes,
+                    r.SourceFirst + 1, r.SourceFirst + r.SourceFrames, clipSources,
+                    r.Reversed, r.TailHoldFrames);
                 if (_seqKeyProp is { } prop)
                 {
                     var key = clip.Keyframes.FirstOrDefault(k => k.Property == prop && k.Frame == _seqKeyFrame);
@@ -1733,7 +2385,9 @@ public sealed partial class MainWindow : Window
                 {
                     var clip = _doc.Project.Clips.First(c => c.Id == r.Clip.Id);
                     SeqInspector.ShowClip(clip.AnimationId, clip.Speed, r.OutputFrames, _doc.Project.Fps,
-                        clip.BaseTransform, clip.Keyframes);
+                        clip.BaseTransform, clip.Keyframes,
+                        r.SourceFirst + 1, r.SourceFirst + r.SourceFrames, SourceCountOrMinusOne(clip.AnimationId),
+                        r.Reversed, r.TailHoldFrames);
                 }
                 else
                 {
@@ -1743,7 +2397,18 @@ public sealed partial class MainWindow : Window
             }
         }
         SeqInspector.ShowProject(_doc.Project.Name, _doc.Project.Fps,
-            _seqResolved.Count, _seqClip?.FrameCount ?? 0);
+            _seqResolved.Count, _seqClip?.FrameCount ?? 0,
+            _settings.OnionEnabled, _settings.OnionCount, _settings.OnionOpacity);
+        UpdateRippleMenu();
+        OnionItem.IsChecked = _settings.OnionEnabled;
+    }
+
+    private int SourceCountOrMinusOne(string animationId)
+    {
+        if (_loader is null)
+            return -1;
+        try { return SourceCount(animationId); }
+        catch { return -1; }
     }
 
     // ---------- project persistence ----------
@@ -1801,6 +2466,8 @@ public sealed partial class MainWindow : Window
             return;
         _doc.New();
         _seqSelectedClip = null;
+        _clipboard.Clear();
+        ClearFrameSelection();
         SetSequenceMode(true);
         RebuildSequence();
     }
@@ -1835,12 +2502,21 @@ public sealed partial class MainWindow : Window
             }
             var missing = ProjectSerializer.ValidateAnimations(project, id => _loader.Catalog.Contains(id));
             _doc.Load(project, path);
+            ClearFrameSelection();
+            _clipboard.Clear();
+            int clamped = ProjectSerializer.ClampFrameRanges(_doc.Project,
+                id => _loader.Catalog.GetFrameRegions(id).Count);
             _seqSelectedClip = null;
             SetSequenceMode(true);
             RebuildSequence();
+            var notes = new List<string>();
             if (missing.MissingAnimationIds.Count > 0)
-                ShowToast("Project references missing animations (check game version): " +
-                    string.Join(", ", missing.MissingAnimationIds.Take(5)));
+                notes.Add("missing animations: " + string.Join(", ", missing.MissingAnimationIds.Take(5)));
+            if (clamped > 0)
+                notes.Add($"trimmed {clamped} clip(s) to the available frames (game version drift)");
+            if (notes.Count > 0)
+                ShowToast("Project references changed since it was saved (check game version): " +
+                    string.Join("; ", notes));
         }
         catch (Exception ex)
         {

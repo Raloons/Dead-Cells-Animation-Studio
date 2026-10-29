@@ -196,7 +196,7 @@ public sealed class StabilityRegressionTests
         var frames = new List<byte[]> { new byte[8 * 8 * 4], new byte[8 * 8 * 4] };
         var rs = new RenderedSequence(8, 8, frames);
         var resolved = new[] { new ResolvedClip(
-            new SequenceClip { Id = "c", AnimationId = "A", Speed = 1 }, 0, 0, 2, 2) };
+            new SequenceClip { Id = "c", AnimationId = "A", Speed = 1 }, 0, 0, 2, 2, 0, false, 0, 0) };
         Assert.Throws<OperationCanceledException>(() =>
             PngSequenceExporter.ExportRendered(rs, TempPath("e"), overwrite: true, progress: null, cancellationToken: cts.Token));
         Assert.Throws<OperationCanceledException>(() =>

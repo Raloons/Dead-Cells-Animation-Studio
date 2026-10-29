@@ -1,0 +1,107 @@
+{
+  "format": "dcanim",
+  "version": 3,
+  "name": "Katana Splice Demo",
+  "fps": 30,
+  "clips": [
+    {
+      "id": "demo-opening",
+      "animation": "AtkKatanaA",
+      "speed": 1,
+      "transform": null,
+      "keyframes": [],
+      "sourceFirst": 0,
+      "sourceLast": 3,
+      "reversed": false,
+      "leadHoldFrames": 0,
+      "tailHoldFrames": 0
+    },
+    {
+      "id": "demo-middle",
+      "animation": "AtkKatanaB2",
+      "speed": 1,
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1,
+        "scaleY": 1,
+        "rotationDegrees": 0,
+        "opacity": 1,
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "flipH": false,
+        "flipV": false
+      },
+      "keyframes": [
+        {
+          "property": "X",
+          "frame": 0,
+          "value": 0,
+          "interpolation": "Hold"
+        },
+        {
+          "property": "X",
+          "frame": 2,
+          "value": 14,
+          "interpolation": "Linear"
+        }
+      ],
+      "sourceFirst": 4,
+      "sourceLast": 6,
+      "reversed": false,
+      "leadHoldFrames": 0,
+      "tailHoldFrames": 0
+    },
+    {
+      "id": "demo-finisher",
+      "animation": "AtkKatanaB3",
+      "speed": 1,
+      "transform": null,
+      "keyframes": [],
+      "sourceFirst": 1,
+      "sourceLast": 5,
+      "reversed": true,
+      "leadHoldFrames": 0,
+      "tailHoldFrames": 0
+    },
+    {
+      "id": "demo-sheath-hold",
+      "animation": "AtkKatanaA",
+      "speed": 1,
+      "transform": null,
+      "keyframes": [],
+      "sourceFirst": 25,
+      "sourceLast": 25,
+      "reversed": false,
+      "leadHoldFrames": 0,
+      "tailHoldFrames": 6
+    }
+  ],
+  "effects": [
+    {
+      "id": "demo-shockwave",
+      "name": "Shockwave",
+      "image": "demo-shockwave.png",
+      "startFrame": 9,
+      "durationFrames": 12,
+      "layer": 0,
+      "transform": null,
+      "keyframes": []
+    }
+  ],
+  "audio": [
+    {
+      "id": "demo-tone",
+      "name": "Demo tone",
+      "file": "demo-tone.wav",
+      "startSeconds": 0.5,
+      "trimStartSeconds": 0,
+      "durationSeconds": null,
+      "volume": 0.8,
+      "muted": false
+    }
+  ],
+  "canvasWidth": 0,
+  "canvasHeight": 0,
+  "rippleFxAudio": true
+}

@@ -27,11 +27,24 @@ public sealed class PreviewControl : Control
     private static readonly IBrush CheckDark = new SolidColorBrush(Color.FromRgb(0x19, 0x19, 0x1E));
     private static readonly IBrush OverlayPen = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0xA5));
     private static readonly IBrush OverlayFill = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xEC));
+    private static readonly IBrush PastWash = new SolidColorBrush(Color.FromArgb(70, 0x7A, 0x90, 0xB0));
+    private static readonly IBrush FutureWash = new SolidColorBrush(Color.FromArgb(70, 0xB0, 0x90, 0x5A));
+
+    private static void DrawOnionGhost(DrawingContext context, Bitmap ghost, Rect dest, double opacity, IBrush wash)
+    {
+        // Same dest rect as the base frame (identical canvas): pixel-crisp
+        // alignment for free, including holds and reversed frames.
+        var source = new Rect(0, 0, ghost.PixelSize.Width, ghost.PixelSize.Height);
+        using (context.PushOpacity(opacity))
+            context.DrawImage(ghost, source, dest);
+        context.FillRectangle(wash, dest);
+    }
 
     static PreviewControl()
     {
         AffectsRender<PreviewControl>(FrameProperty, ZoomProperty, ShowCheckerProperty, PanProperty,
-            SelectionRectProperty, PivotMarkerProperty);
+            SelectionRectProperty, PivotMarkerProperty,
+            OnionPreviousProperty, OnionNextProperty, OnionOpacityProperty);
     }
 
     public PreviewControl()
@@ -86,6 +99,39 @@ public sealed class PreviewControl : Control
     /// <summary>When true, left-drag moves the selection instead of panning.</summary>
     public bool MoveEnabled { get; set; }
 
+    /// <summary>
+    /// Onion-skin neighbors (preview-only, never exported): previous frames
+    /// oldest-first, next frames nearest-first. Same canvas size as
+    /// <see cref="Frame"/> (composed sequence frames), drawn underneath it.
+    /// </summary>
+    public IList<Bitmap>? OnionPrevious
+    {
+        get => GetValue(OnionPreviousProperty);
+        set => SetValue(OnionPreviousProperty, value);
+    }
+
+    public static readonly StyledProperty<IList<Bitmap>?> OnionPreviousProperty =
+        AvaloniaProperty.Register<PreviewControl, IList<Bitmap>?>(nameof(OnionPrevious));
+
+    public IList<Bitmap>? OnionNext
+    {
+        get => GetValue(OnionNextProperty);
+        set => SetValue(OnionNextProperty, value);
+    }
+
+    public static readonly StyledProperty<IList<Bitmap>?> OnionNextProperty =
+        AvaloniaProperty.Register<PreviewControl, IList<Bitmap>?>(nameof(OnionNext));
+
+    /// <summary>Ghost opacity for onion skins (0.15..0.6).</summary>
+    public double OnionOpacity
+    {
+        get => GetValue(OnionOpacityProperty);
+        set => SetValue(OnionOpacityProperty, value);
+    }
+
+    public static readonly StyledProperty<double> OnionOpacityProperty =
+        AvaloniaProperty.Register<PreviewControl, double>(nameof(OnionOpacity), 0.35);
+
     /// <summary>Raised while moving the selection (delta in screen pixels).</summary>
     public event Action<Vector>? MoveDelta;
     public event Action? MoveStarted;
@@ -130,6 +176,24 @@ public sealed class PreviewControl : Control
         double h = frame.PixelSize.Height * Zoom;
         var dest = new Rect((bounds.Width - w) / 2 + Pan.X, (bounds.Height - h) / 2 + Pan.Y, w, h);
         var source = new Rect(0, 0, frame.PixelSize.Width, frame.PixelSize.Height);
+
+        // Onion skins (preview-only): neighbors beneath the current frame.
+        // Past = cool slate, future = warm sand — restrained and
+        // distinguishable without touching the approved palette.
+        double ghost = Math.Clamp(OnionOpacity, 0.0, 0.6);
+        if (ghost > 0)
+        {
+            if (OnionPrevious is { Count: > 0 })
+            {
+                foreach (var prev in OnionPrevious)
+                    DrawOnionGhost(context, prev, dest, ghost, PastWash);
+            }
+            if (OnionNext is { Count: > 0 })
+            {
+                foreach (var next in OnionNext)
+                    DrawOnionGhost(context, next, dest, ghost, FutureWash);
+            }
+        }
         context.DrawImage(frame, source, dest);
 
         // Editor-only selection overlay (never exported).

@@ -101,8 +101,7 @@ public static class SpriteSheetExporter
 
             int clipIndex = clipOfGlobal[i];
             var r = resolved.First(rr => rr.ClipIndex == clipIndex);
-            int src = SequenceTiming.SourceIndex(
-                perClipCursor[clipIndex]++, r.SourceFrames, r.OutputFrames);
+            int src = r.Map.SourceAt(perClipCursor[clipIndex]++);
             sheetFrames.Add(new SheetFrame(i, x, y, cellW, cellH, r.Clip.AnimationId, clipIndex, src));
             progress?.Report(new ExportProgress((i + 1) / (double)frames.Count, $"Frame {i + 1} / {frames.Count}"));
         }

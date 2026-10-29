@@ -45,6 +45,46 @@ Evidence capture (used for the screenshots above):
 dotnet run --project src/DcAnim.App -- --evidence <output-dir>
 ```
 
+## What works (AS-M4.2 splicing)
+
+- Everything from AS-M4.1, plus frame-level editing: per-clip source In/Out
+  trim (numeric + drag the clip edges), split at playhead (Ctrl+K), frame
+  range select (Shift+drag), copy/cut/paste/delete/duplicate ranges (Ctrl+C/X/V/D,
+  Delete), per-clip reverse (R), tail holds (freeze the final pose N extra
+  frames), and a frame-accurate timeline (per-frame source numbers at high
+  zoom, ruler click-to-seek, trim handles).
+- Onion skins: preview-only ghost frames around the playhead (1–3 per side,
+  adjustable opacity; past = slate, future = sand), never exported.
+- Ripple toggle (per project, default on): duration-changing edits shift
+  effects/audio at or after the edit point, keeping sync.
+- `.dcanim` v3 projects (v1/v2 still load; trims clamp to available frames
+  with a warning on game-version drift); 170 automated tests green.
+
+### Frame-editing tutorial (Katana splice)
+
+Frame numbers in the UI are 1-based ("Frames 4–8 of 26"); the file stores
+0-based indexes. Trimming is non-destructive — the native animation is never
+modified.
+
+1. File > Open res.pak… (or auto-detect), switch to **Sequence**, File > New.
+2. Drag `AtkKatanaA` on; select it, set Source In 1 / Source Out 4 (frames 1–4).
+3. Drag `AtkKatanaB2` after it; trim to Source In 5 / Source Out 7.
+4. Drag `AtkKatanaB3`; trim to Source In 2 / Source Out 6.
+5. Click the ruler to place the playhead mid-clip and press Ctrl+K to split;
+   select a piece and press R to reverse it, or set Tail hold 6 to freeze the
+   final pose for 6 extra frames.
+6. Shift+drag on the timeline to select a frame range; Ctrl+C / Ctrl+X /
+   Ctrl+V to copy, cut and paste it at the playhead; Delete removes it.
+   Drag clip edges to trim; drag bodies to reorder.
+7. View > Onion skins to judge transitions (ghosts follow holds/reverse).
+8. Play the sequence Space; Ctrl+Z / Ctrl+Y everything; Ctrl+S to save.
+9. File > Export sequence for PNG, GIF, or sheet — identical to the preview.
+
+A runnable example ships as `docs/evidence/katana-splice.dcanim` (native
+references only; effect/audio paths are placeholders — relink or delete
+them). See `docs/AS-M4.2-REPORT.md` for the ripple policy, keyframe-remap
+rules, and resampling caveats.
+
 ## What works (AS-M4 authoring)
 
 - Everything from AS-M3, plus non-destructive transforms (position, scale,

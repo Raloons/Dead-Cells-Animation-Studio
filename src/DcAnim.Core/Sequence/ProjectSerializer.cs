@@ -39,6 +39,7 @@ public static class ProjectSerializer
         public List<AudioDto> Audio { get; set; } = new();
         public int CanvasWidth { get; set; }
         public int CanvasHeight { get; set; }
+        public bool RippleFxAudio { get; set; } = true;
     }
 
     private sealed class ClipDto
@@ -48,6 +49,11 @@ public static class ProjectSerializer
         public double Speed { get; set; } = 1.0;
         public TransformDto? Transform { get; set; }
         public List<KeyframeDto> Keyframes { get; set; } = new();
+        public int SourceFirst { get; set; }
+        public int? SourceLast { get; set; }
+        public bool Reversed { get; set; }
+        public int LeadHoldFrames { get; set; }
+        public int TailHoldFrames { get; set; }
     }
 
     private sealed class TransformDto
@@ -116,6 +122,11 @@ public static class ProjectSerializer
                 Speed = c.Speed,
                 Transform = ToDto(c.BaseTransform),
                 Keyframes = c.Keyframes.Select(ToDto).ToList(),
+                SourceFirst = c.SourceFirst,
+                SourceLast = c.SourceLast,
+                Reversed = c.Reversed,
+                LeadHoldFrames = c.LeadHoldFrames,
+                TailHoldFrames = c.TailHoldFrames,
             }).ToList(),
             Effects = project.Effects.Select(e => new EffectDto
             {
@@ -141,6 +152,7 @@ public static class ProjectSerializer
             }).ToList(),
             CanvasWidth = project.CanvasWidth,
             CanvasHeight = project.CanvasHeight,
+            RippleFxAudio = project.RippleFxAudio,
         };
         Directory.CreateDirectory(dir!);
         string tmp = Path.Combine(dir!, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
@@ -184,9 +196,9 @@ public static class ProjectSerializer
             throw new InvalidDataException($"Project file '{path}' is empty or malformed.");
         if (!string.Equals(dto.Format, FormatTag, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"'{path}' is not a Dead Cells Animation Studio project (bad format tag).");
-        if (dto.Version != 1 && dto.Version != SequenceProject.CurrentVersion)
+        if (dto.Version != 1 && dto.Version != 2 && dto.Version != SequenceProject.CurrentVersion)
             throw new NotSupportedException(
-                $"Unsupported project version {dto.Version} (this build supports versions 1 and {SequenceProject.CurrentVersion}).");
+                $"Unsupported project version {dto.Version} (this build supports versions 1 through {SequenceProject.CurrentVersion}).");
 
         var project = FromDto(dto, dir);
         ValidateStructure(project, out var errors);
@@ -225,6 +237,7 @@ public static class ProjectSerializer
         Fps = dto.Fps,
         CanvasWidth = dto.CanvasWidth,
         CanvasHeight = dto.CanvasHeight,
+        RippleFxAudio = dto.RippleFxAudio, // default true covers v1/v2 files
         Clips = dto.Clips.Select(c => new SequenceClip
         {
             Id = string.IsNullOrWhiteSpace(c.Id) ? Guid.NewGuid().ToString("N") : c.Id,
@@ -232,6 +245,14 @@ public static class ProjectSerializer
             Speed = c.Speed,
             BaseTransform = FromDto(c.Transform),
             Keyframes = c.Keyframes.Select(FromDto).Where(k => k is not null).Select(k => k!).ToList(),
+            // v1/v2 files predate trims: full range, forward, no holds.
+            // Stored values pass through untouched so structural validation
+            // can reject bad files (no silent coercion here).
+            SourceFirst = c.SourceFirst,
+            SourceLast = c.SourceLast,
+            Reversed = c.Reversed,
+            LeadHoldFrames = c.LeadHoldFrames,
+            TailHoldFrames = c.TailHoldFrames,
         }).ToList(),
         Effects = dto.Effects.Select(e => new EffectClip
         {
@@ -331,6 +352,14 @@ public static class ProjectSerializer
             CheckId(errors, ids, clip.Id, $"clip {i}");
             ValidateKeys(clip.Keyframes, $"clip {i}", errors);
             ValidateTransform(clip.BaseTransform, $"clip {i}", errors);
+            if (clip.SourceFirst < 0)
+                errors.Add($"clip {i} ('{clip.AnimationId}'): source first frame must not be negative");
+            if (clip.SourceLast.HasValue && clip.SourceLast.Value < clip.SourceFirst)
+                errors.Add($"clip {i} ('{clip.AnimationId}'): source last frame must not precede the first");
+            if (clip.LeadHoldFrames < 0 || clip.LeadHoldFrames > SequenceClip.MaxHoldFrames)
+                errors.Add($"clip {i} ('{clip.AnimationId}'): lead hold must be 0..{SequenceClip.MaxHoldFrames}");
+            if (clip.TailHoldFrames < 0 || clip.TailHoldFrames > SequenceClip.MaxHoldFrames)
+                errors.Add($"clip {i} ('{clip.AnimationId}'): tail hold must be 0..{SequenceClip.MaxHoldFrames}");
         }
         for (int i = 0; i < project.Effects.Count; i++)
         {
@@ -358,6 +387,37 @@ public static class ProjectSerializer
             if (double.IsNaN(a.Volume) || double.IsInfinity(a.Volume) || a.Volume < 0 || a.Volume > 1)
                 errors.Add($"audio {i}: volume must be 0..1");
         }
+    }
+
+    /// <summary>
+    /// Clamp clip trims into the available source frames (game-version
+    /// drift: a project authored against more frames than the loaded game
+    /// provides). Returns the number of clips adjusted. Structural problems
+    /// (negative starts, last-before-first) are load errors, not drift, and
+    /// are left for <see cref="Validate"/> to reject.
+    /// </summary>
+    public static int ClampFrameRanges(SequenceProject project, Func<string, int> sourceCount)
+    {
+        int clamped = 0;
+        foreach (var clip in project.Clips)
+        {
+            int count;
+            try { count = sourceCount(clip.AnimationId); }
+            catch (KeyNotFoundException) { continue; }
+            if (count <= 0)
+                continue;
+            int first = Math.Min(clip.SourceFirst, count - 1);
+            int last = Math.Min(clip.SourceLast ?? (count - 1), count - 1);
+            if (last < first)
+                last = first;
+            if (first != clip.SourceFirst || last != (clip.SourceLast ?? (count - 1)))
+            {
+                clip.SourceFirst = first;
+                clip.SourceLast = last;
+                clamped++;
+            }
+        }
+        return clamped;
     }
 
     private static bool IsBadTime(double v) => double.IsNaN(v) || double.IsInfinity(v);

@@ -77,4 +77,29 @@ public static class TimelineMath
         var t = TimeSpan.FromSeconds(frame / fps);
         return $"{(int)t.TotalMinutes}:{t.Seconds:00}.{t.Milliseconds:000}";
     }
+
+    /// <summary>
+    /// Neighbor output frames for onion-skin overlays: up to
+    /// <paramref name="count"/> frames on each side of
+    /// <paramref name="frame"/>, clamped to <c>[0, totalFrames)</c> (no
+    /// wrap). Previous is ordered far-to-near, next near-to-far — paint
+    /// order, so nearer ghosts draw on top.
+    /// </summary>
+    public static (int[] Previous, int[] Next) OnionFrames(int frame, int totalFrames, int count)
+    {
+        count = Math.Clamp(count, 0, 3);
+        var prev = new List<int>();
+        var next = new List<int>();
+        for (int i = count; i >= 1; i--)
+        {
+            if (frame - i >= 0)
+                prev.Add(frame - i);
+        }
+        for (int i = 1; i <= count; i++)
+        {
+            if (frame + i < totalFrames)
+                next.Add(frame + i);
+        }
+        return (prev.ToArray(), next.ToArray());
+    }
 }
