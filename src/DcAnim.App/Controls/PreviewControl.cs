@@ -23,8 +23,8 @@ public sealed class PreviewControl : Control
     public static readonly StyledProperty<Vector> PanProperty =
         AvaloniaProperty.Register<PreviewControl, Vector>(nameof(Pan), new Vector(0, 0));
 
-    private static readonly IBrush CheckLight = new SolidColorBrush(Color.FromRgb(0x38, 0x38, 0x44));
-    private static readonly IBrush CheckDark = new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x2A));
+    private static readonly IBrush CheckLight = new SolidColorBrush(Color.FromRgb(0x23, 0x23, 0x29));
+    private static readonly IBrush CheckDark = new SolidColorBrush(Color.FromRgb(0x19, 0x19, 0x1E));
 
     static PreviewControl()
     {

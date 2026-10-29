@@ -16,25 +16,18 @@
         </Button>
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-        <Path Data="{StaticResource IconFilm}" Fill="{StaticResource WsTextMuted}"
-              Width="16" Height="16" Stretch="Uniform" VerticalAlignment="Center"/>
         <TextBlock Text="TIMELINE" Classes="ws-panel-header" Margin="0"/>
-        <TextBlock x:Name="PositionText" FontSize="12" Foreground="{StaticResource WsTextPrimary}"
+        <TextBlock x:Name="PositionText" FontSize="12" Foreground="{StaticResource WsTextSecondary}"
                    VerticalAlignment="Center" Text="—"/>
-        <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-          <Border Width="10" Height="10" Background="{StaticResource WsHit}" CornerRadius="2"/>
-          <TextBlock Text="hit frame" FontSize="11" Foreground="{StaticResource WsTextMuted}"
-                     VerticalAlignment="Center"/>
-        </StackPanel>
       </StackPanel>
     </DockPanel>
 
     <!-- Scrollable track -->
-    <Border BorderBrush="{StaticResource WsBorder}" BorderThickness="1" CornerRadius="6"
+    <Border BorderBrush="{StaticResource WsBorder}" BorderThickness="1" CornerRadius="4"
             Background="{StaticResource WsTrackBackground}">
       <ScrollViewer x:Name="TrackScroll" HorizontalScrollBarVisibility="Auto"
                     VerticalScrollBarVisibility="Disabled" Padding="0">
-        <controls:TrackControl x:Name="Track" Height="106"/>
+        <controls:TrackControl x:Name="Track" Height="92"/>
       </ScrollViewer>
     </Border>
   </DockPanel>

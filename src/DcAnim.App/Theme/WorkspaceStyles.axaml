@@ -1,4 +1,5 @@
-<!-- Workspace control styles. Included after FluentTheme so they take precedence. -->
+<!-- Workspace control styles. Included after FluentTheme so they take precedence.
+     Neutral system: flat surfaces, gray selection, no decorative effects. -->
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
@@ -23,7 +24,7 @@
     <Setter Property="TextWrapping" Value="Wrap"/>
   </Style>
 
-  <!-- Transport icon buttons: uniform 34px, monochrome glyph, violet primary -->
+  <!-- Transport icon buttons: uniform 34px, monochrome glyph, neutral -->
   <Style Selector="Button.ws-transport">
     <Setter Property="Width" Value="{StaticResource WsTransportButtonSize}"/>
     <Setter Property="Height" Value="{StaticResource WsTransportButtonSize}"/>
@@ -45,11 +46,14 @@
   <Style Selector="Button.ws-transport:disabled">
     <Setter Property="Opacity" Value="0.35"/>
   </Style>
-  <Style Selector="Button.ws-transport-primary">
-    <Setter Property="Background" Value="{StaticResource WsAccent}"/>
+  <!-- Primary transport (Play/Pause): modest raised contrast, no color block -->
+  <Style Selector="Button.ws-transport-main">
+    <Setter Property="Background" Value="{StaticResource WsControlBackground}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource WsBorderStrong}"/>
   </Style>
-  <Style Selector="Button.ws-transport-primary:pointerover">
-    <Setter Property="Background" Value="{StaticResource WsAccentHover}"/>
+  <Style Selector="Button.ws-transport-main:pointerover">
+    <Setter Property="Background" Value="{StaticResource WsHoverBackground}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource WsSelectedBorder}"/>
   </Style>
 
   <!-- Small toolbar buttons -->
@@ -84,28 +88,52 @@
   </Style>
   <Style Selector="ToggleButton.ws-tool:checked">
     <Setter Property="Background" Value="{StaticResource WsSelectedBackground}"/>
-    <Setter Property="BorderBrush" Value="{StaticResource WsAccent}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource WsSelectedBorder}"/>
   </Style>
 
-  <!-- Category pills -->
+  <!-- Category tabs: neutral, square, subtle -->
   <Style Selector="ToggleButton.ws-category">
     <Setter Property="Height" Value="26"/>
     <Setter Property="Padding" Value="10,0"/>
     <Setter Property="Margin" Value="0,0,4,4"/>
-    <Setter Property="Background" Value="{StaticResource WsControlBackground}"/>
+    <Setter Property="Background" Value="Transparent"/>
     <Setter Property="BorderThickness" Value="1"/>
-    <Setter Property="BorderBrush" Value="{StaticResource WsBorder}"/>
-    <Setter Property="CornerRadius" Value="13"/>
+    <Setter Property="BorderBrush" Value="Transparent"/>
+    <Setter Property="CornerRadius" Value="{StaticResource WsCornerSmall}"/>
     <Setter Property="FontSize" Value="{StaticResource WsBodyFontSize}"/>
     <Setter Property="Foreground" Value="{StaticResource WsTextSecondary}"/>
   </Style>
   <Style Selector="ToggleButton.ws-category:pointerover">
-    <Setter Property="BorderBrush" Value="{StaticResource WsBorderStrong}"/>
+    <Setter Property="Background" Value="{StaticResource WsHoverBackground}"/>
     <Setter Property="Foreground" Value="{StaticResource WsTextPrimary}"/>
   </Style>
   <Style Selector="ToggleButton.ws-category:checked">
-    <Setter Property="Background" Value="{StaticResource WsAccentDim}"/>
-    <Setter Property="BorderBrush" Value="{StaticResource WsAccent}"/>
+    <Setter Property="Background" Value="{StaticResource WsSelectedBackground}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource WsSelectedBorder}"/>
     <Setter Property="Foreground" Value="{StaticResource WsTextPrimary}"/>
+  </Style>
+
+  <!-- Library rows: neutral selection -->
+  <Style Selector="ListBoxItem">
+    <Setter Property="Padding" Value="4,2"/>
+    <Setter Property="CornerRadius" Value="{StaticResource WsCornerSmall}"/>
+  </Style>
+  <Style Selector="ListBoxItem:selected">
+    <Setter Property="Background" Value="{StaticResource WsSelectedBackground}"/>
+  </Style>
+  <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="Transparent"/>
+  </Style>
+  <Style Selector="ListBoxItem:pointerover">
+    <Setter Property="Background" Value="{StaticResource WsHoverBackground}"/>
+  </Style>
+
+  <!-- Inspector sections: flat headers, no cards -->
+  <Style Selector="Expander">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0,0,0,1"/>
+    <Setter Property="BorderBrush" Value="{StaticResource WsSeparator}"/>
+    <Setter Property="Padding" Value="0,4,0,8"/>
+    <Setter Property="HorizontalAlignment" Value="Stretch"/>
   </Style>
 </Styles>

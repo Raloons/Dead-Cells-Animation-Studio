@@ -38,9 +38,9 @@
              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
       <ListBox.ItemTemplate>
         <DataTemplate>
-          <Grid ColumnDefinitions="56,*,Auto" Margin="0,2">
-            <Border Grid.Column="0" Width="52" Height="52" CornerRadius="4"
-                    Background="#101016" BorderBrush="{StaticResource WsBorder}" BorderThickness="1">
+          <Grid ColumnDefinitions="48,*,Auto" Margin="0,1">
+            <Border Grid.Column="0" Width="44" Height="44" CornerRadius="3"
+                    Background="#101014" BorderBrush="{StaticResource WsBorder}" BorderThickness="1">
               <Image Source="{Binding Thumbnail}" Stretch="Uniform" Margin="2"
                      RenderOptions.BitmapInterpolationMode="None"/>
             </Border>
@@ -48,10 +48,11 @@
               <TextBlock Text="{Binding Id}" FontSize="12" Foreground="{StaticResource WsTextPrimary}"/>
               <TextBlock Text="{Binding Meta}" FontSize="11" Foreground="{StaticResource WsTextMuted}"/>
             </StackPanel>
-            <Border Grid.Column="2" VerticalAlignment="Center" Margin="6,0,2,0" Padding="6,2"
-                    CornerRadius="8" Background="{StaticResource WsControlBackground}"
+            <Border Grid.Column="2" VerticalAlignment="Center" Margin="6,0,2,0" Padding="5,1"
+                    CornerRadius="3" Background="Transparent"
+                    BorderBrush="{StaticResource WsBorder}" BorderThickness="1"
                     IsVisible="{Binding CategoryVisible}">
-              <TextBlock Text="{Binding Category}" FontSize="10" Foreground="{StaticResource WsTextSecondary}"/>
+              <TextBlock Text="{Binding Category}" FontSize="10" Foreground="{StaticResource WsTextMuted}"/>
             </Border>
           </Grid>
         </DataTemplate>

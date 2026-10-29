@@ -30,18 +30,19 @@ public sealed class TrackControl : Control
     public static readonly StyledProperty<double> FpsProperty =
         AvaloniaProperty.Register<TrackControl, double>(nameof(Fps), 30.0);
 
-    public const double RulerHeight = 30.0;
-    public const double LaneHeight = 68.0;
+    public const double RulerHeight = 26.0;
+    public const double LaneHeight = 56.0;
     public const double LaneTop = RulerHeight + 4;
 
-    private static readonly IBrush RulerBrush = new SolidColorBrush(Color.FromRgb(0x1B, 0x1B, 0x23));
-    private static readonly IBrush CellBrush = new SolidColorBrush(Color.FromRgb(0x2A, 0x2A, 0x36));
-    private static readonly IBrush PlayedBrush = new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x48));
-    private static readonly IBrush CurrentBrush = new SolidColorBrush(Color.FromRgb(0x8B, 0x5C, 0xF6));
-    private static readonly IBrush HitBrush = new SolidColorBrush(Color.FromRgb(0xF5, 0x9E, 0x0B));
-    private static readonly IBrush TickBrush = new SolidColorBrush(Color.FromRgb(0x4A, 0x4A, 0x58));
-    private static readonly IBrush TextBrush = new SolidColorBrush(Color.FromRgb(0xA7, 0xA7, 0xB5));
-    private static readonly IPen PlayheadPen = new Pen(new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), 2);
+    private static readonly IBrush RulerBrush = new SolidColorBrush(Color.FromRgb(0x17, 0x17, 0x1B));
+    private static readonly IBrush CellBrush = new SolidColorBrush(Color.FromRgb(0x23, 0x23, 0x29));
+    private static readonly IBrush PlayedBrush = new SolidColorBrush(Color.FromRgb(0x2C, 0x2C, 0x34));
+    private static readonly IBrush CurrentBrush = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x3D));
+    private static readonly IPen CurrentPen = new Pen(new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0xA5)), 1.5);
+    private static readonly IBrush HitBrush = new SolidColorBrush(Color.FromRgb(0xC9, 0x97, 0x3F));
+    private static readonly IBrush TickBrush = new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x42));
+    private static readonly IBrush TextBrush = new SolidColorBrush(Color.FromRgb(0x76, 0x76, 0x7F));
+    private static readonly IPen PlayheadPen = new Pen(new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xEC)), 1.5);
 
     private bool _scrubbing;
 
@@ -104,8 +105,9 @@ public sealed class TrackControl : Control
             return;
         }
 
-        // Ruler ticks + labels.
-        int every = TimelineMath.LabelEvery(n, ppf);
+        // Ruler ticks + labels. Label gap accounts for "N · m:ss.mmm" text width
+        // so labels never overlap at low zoom.
+        int every = TimelineMath.LabelEvery(n, ppf, 88.0);
         for (int i = 0; i < n; i++)
         {
             double x = 4 + TimelineMath.XForFrame(i, ppf);
@@ -141,11 +143,15 @@ public sealed class TrackControl : Control
 
             if (i == CurrentFrame)
             {
-                context.DrawRectangle(new Pen(CurrentBrush, 2), new Rect(x, LaneTop, ppf, LaneHeight));
+                context.DrawRectangle(CurrentPen, new Rect(x, LaneTop, ppf, LaneHeight));
             }
             if (i == HitFrame)
             {
-                context.FillRectangle(HitBrush, new Rect(x + 1, LaneTop + 1, Math.Max(1, ppf - 2), 4));
+                // Centered tick, capped in width so it stays subtle at high zoom
+                // while remaining precisely inside its frame cell.
+                double tickW = Math.Min(Math.Max(1, ppf - 2), 24);
+                double tickX = x + (ppf - tickW) / 2;
+                context.FillRectangle(HitBrush, new Rect(tickX, LaneTop + 1, tickW, 3));
             }
         }
 

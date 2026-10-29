@@ -70,6 +70,7 @@ public sealed partial class MainWindow : Window
         TimelineZoomOutItem.Click += (_, _) => Timeline.ZoomOut();
         ResetLayoutItem.Click += (_, _) => ResetLayout();
         FormatNotesItem.Click += async (_, _) => await ShowFormatNotesAsync();
+        ShortcutsItem.Click += async (_, _) => await ShowShortcutsAsync();
         AboutItem.Click += async (_, _) => await ShowAboutAsync();
 
         KeyDown += OnKeyDown;
@@ -385,6 +386,57 @@ public sealed partial class MainWindow : Window
         await dialog.ShowDialog(this);
     }
 
+    private async Task ShowShortcutsAsync()
+    {
+        var rows = new[]
+        {
+            ("Space", "Play / pause"),
+            ("← / →", "Previous / next frame"),
+            ("Home / End", "First / last frame"),
+            ("Ctrl+F", "Focus animation search"),
+            ("Ctrl+0", "Fit preview to view"),
+            ("Ctrl+B", "Toggle checkerboard background"),
+            ("Ctrl+O", "Open res.pak"),
+            ("Ctrl + wheel", "Zoom timeline (over track)"),
+            ("F5", "Reload source"),
+        };
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("140,*"),
+            RowDefinitions = new RowDefinitions(string.Concat(Enumerable.Repeat("Auto,", rows.Length)).TrimEnd(',')),
+        };
+        for (int i = 0; i < rows.Length; i++)
+        {
+            var key = new TextBlock
+            {
+                Text = rows[i].Item1,
+                Foreground = Avalonia.Media.Brushes.White,
+                Margin = new Avalonia.Thickness(0, 0, 12, 6),
+            };
+            var action = new TextBlock
+            {
+                Text = rows[i].Item2,
+                Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromRgb(0xA9, 0xA9, 0xB3)),
+                Margin = new Avalonia.Thickness(0, 0, 0, 6),
+            };
+            grid.Children.Add(key);
+            grid.Children.Add(action);
+            Grid.SetRow(key, i);
+            Grid.SetRow(action, i);
+            Grid.SetColumn(key, 0);
+            Grid.SetColumn(action, 1);
+        }
+        var dialog = new Window
+        {
+            Title = "Keyboard shortcuts",
+            Width = 380,
+            Height = 400,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new ScrollViewer { Content = grid, Margin = new Avalonia.Thickness(16) },
+        };
+        await dialog.ShowDialog(this);
+    }
+
     private async Task ShowFormatNotesAsync()
     {
         var dialog = new Window
@@ -580,6 +632,9 @@ public sealed partial class MainWindow : Window
             Browser.Select("AtkKatanaB2"); // exercise the real selection path
             if (args.Contains("--grid"))
                 Browser.SetViewMode(grid: true);
+            int tl = Array.IndexOf(args, "--tlzoom");
+            if (tl >= 0 && tl + 1 < args.Length && double.TryParse(args[tl + 1], out double tlz))
+                Timeline.SetZoomFactor(tlz);
             await Task.Delay(3500); // let background thumbnail prefetch land
             TogglePlay(); // capture mid-playback: Pause icon + advanced frame
             await Task.Delay(900);

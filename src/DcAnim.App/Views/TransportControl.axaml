@@ -12,9 +12,9 @@
       <Path Data="{StaticResource IconPrevious}" Fill="{StaticResource WsTextSecondary}"
             Width="16" Height="16" Stretch="Uniform"/>
     </Button>
-    <Button x:Name="PlayButton" Classes="ws-transport ws-transport-primary" Width="44"
+    <Button x:Name="PlayButton" Classes="ws-transport ws-transport-main" Width="44"
             ToolTip.Tip="Play / pause (Space)">
-      <Path x:Name="PlayIcon" Data="{StaticResource IconPlay}" Fill="White"
+      <Path x:Name="PlayIcon" Data="{StaticResource IconPlay}" Fill="{StaticResource WsTextPrimary}"
             Width="16" Height="16" Stretch="Uniform"/>
     </Button>
     <Button x:Name="NextButton" Classes="ws-transport"

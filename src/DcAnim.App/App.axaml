@@ -8,14 +8,15 @@
         <ResourceInclude Source="avares://DeadCells.AnimationStudio/Theme/WorkspaceTheme.axaml"/>
         <ResourceInclude Source="avares://DeadCells.AnimationStudio/Resources/Icons.axaml"/>
       </ResourceDictionary.MergedDictionaries>
-      <!-- Violet accent over the dark Fluent theme. -->
-      <Color x:Key="SystemAccentColor">#8B5CF6</Color>
-      <Color x:Key="SystemAccentColorLight1">#A78BFA</Color>
-      <Color x:Key="SystemAccentColorLight2">#C4B5FD</Color>
-      <Color x:Key="SystemAccentColorLight3">#DDD6FE</Color>
-      <Color x:Key="SystemAccentColorDark1">#7C3AED</Color>
-      <Color x:Key="SystemAccentColorDark2">#6D28D9</Color>
-      <Color x:Key="SystemAccentColorDark3">#5B21B6</Color>
+      <!-- Neutral gray accent: Fluent controls (checkbox, slider, focus,
+           selection) stay functional without a color identity. -->
+      <Color x:Key="SystemAccentColor">#8E8E96</Color>
+      <Color x:Key="SystemAccentColorLight1">#A6A6B0</Color>
+      <Color x:Key="SystemAccentColorLight2">#BCBCC4</Color>
+      <Color x:Key="SystemAccentColorLight3">#D2D2D8</Color>
+      <Color x:Key="SystemAccentColorDark1">#77777F</Color>
+      <Color x:Key="SystemAccentColorDark2">#62626A</Color>
+      <Color x:Key="SystemAccentColorDark3">#4E4E55</Color>
     </ResourceDictionary>
   </Application.Resources>
 

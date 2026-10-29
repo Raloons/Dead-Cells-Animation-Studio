@@ -60,7 +60,7 @@ dotnet run --project src/DcAnim.App -- --evidence <output-dir>
 - Keyboard shortcuts, tooltips, loading/empty/error states, persisted
   workspace layout
 
-![AS-M2 workspace at 1920x1080](docs/evidence/as-m2-1920x1080.png)
+![AS-M2.1 neutral workspace at 1920x1080](docs/evidence/as-m2.1-1920x1080.png)
 
 AS-M1 foundations (decoder, catalog, playback engine, pixel-exact tests)
 are unchanged; see `docs/AS-M1-REPORT.md`.

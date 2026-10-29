@@ -18,7 +18,12 @@ public sealed partial class TimelineView : UserControl
     {
         InitializeComponent();
         Track.ScrubRequested += f => ScrubRequested?.Invoke(f);
-        ZoomSlider.ValueChanged += (_, _) => { _timelineUserZoomed = true; ApplyZoom(); };
+        ZoomSlider.ValueChanged += (_, _) =>
+        {
+            if (!_settingZoom)
+                _timelineUserZoomed = true;
+            ApplyZoom();
+        };
         FitButton.Click += (_, _) => FitToView();
         TrackScroll.SizeChanged += (_, _) => AutoFitOnLayout();
         TrackScroll.PointerWheelChanged += OnWheel;
@@ -26,6 +31,20 @@ public sealed partial class TimelineView : UserControl
     }
 
     private bool _timelineUserZoomed;
+    private bool _settingZoom;
+
+    private void SetZoomValue(double zoom)
+    {
+        _settingZoom = true;
+        try
+        {
+            ZoomSlider.Value = Math.Clamp(zoom, ZoomSlider.Minimum, ZoomSlider.Maximum);
+        }
+        finally
+        {
+            _settingZoom = false;
+        }
+    }
 
     private void AutoFitOnLayout()
     {
@@ -65,11 +84,12 @@ public sealed partial class TimelineView : UserControl
 
     public void SetFps(double fps) => Track.Fps = fps;
 
-    public void ZoomIn() =>
-        ZoomSlider.Value = Math.Clamp(ZoomSlider.Value + 0.5, ZoomSlider.Minimum, ZoomSlider.Maximum);
+    /// <summary>Evidence/testing hook: direct timeline zoom control.</summary>
+    public void SetZoomFactor(double zoom) => SetZoomValue(zoom);
 
-    public void ZoomOut() =>
-        ZoomSlider.Value = Math.Clamp(ZoomSlider.Value - 0.5, ZoomSlider.Minimum, ZoomSlider.Maximum);
+    public void ZoomIn() => SetZoomValue(ZoomSlider.Value + 0.5);
+
+    public void ZoomOut() => SetZoomValue(ZoomSlider.Value - 0.5);
 
     private void ApplyZoom()
     {
@@ -91,7 +111,7 @@ public sealed partial class TimelineView : UserControl
         double ppf = (TrackScroll.Bounds.Width - 12) / n;
         double zoom = Math.Clamp(ppf / 16.0, ZoomSlider.Minimum, ZoomSlider.Maximum);
         _timelineUserZoomed = false; // explicit fit resets the baseline
-        ZoomSlider.Value = zoom;
+        SetZoomValue(zoom);
     }
 
     private void EnsureVisible(int frameIndex)
@@ -113,7 +133,7 @@ public sealed partial class TimelineView : UserControl
         {
             _timelineUserZoomed = true;
             double step = e.Delta.Y > 0 ? 0.25 : -0.25;
-            ZoomSlider.Value = Math.Clamp(ZoomSlider.Value + step, ZoomSlider.Minimum, ZoomSlider.Maximum);
+            SetZoomValue(ZoomSlider.Value + step);
             e.Handled = true;
         }
     }
