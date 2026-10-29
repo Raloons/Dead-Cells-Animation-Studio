@@ -1,0 +1,14 @@
+bin/
+obj/
+.vs/
+TestResults/
+*.user
+*.suo
+.DS_Store
+
+# Never commit game or mod archives/resources.
+*.pak
+*.atlas
+*_n.png
+/extracted/
+/out/

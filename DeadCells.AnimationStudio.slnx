@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DcAnim.App/DcAnim.App.csproj" />
+    <Project Path="src/DcAnim.Core/DcAnim.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DcAnim.Tests/DcAnim.Tests.csproj" />
+  </Folder>
+</Solution>

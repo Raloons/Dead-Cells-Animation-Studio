@@ -1,0 +1,21 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DcAnim.App.App"
+             RequestedThemeVariant="Dark">
+  <Application.Resources>
+    <ResourceDictionary>
+      <!-- Violet accent over the dark Fluent theme. -->
+      <Color x:Key="SystemAccentColor">#8B5CF6</Color>
+      <Color x:Key="SystemAccentColorLight1">#A78BFA</Color>
+      <Color x:Key="SystemAccentColorLight2">#C4B5FD</Color>
+      <Color x:Key="SystemAccentColorLight3">#DDD6FE</Color>
+      <Color x:Key="SystemAccentColorDark1">#7C3AED</Color>
+      <Color x:Key="SystemAccentColorDark2">#6D28D9</Color>
+      <Color x:Key="SystemAccentColorDark3">#5B21B6</Color>
+    </ResourceDictionary>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme />
+  </Application.Styles>
+</Application>

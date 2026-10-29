@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>DcAnim.App</RootNamespace>
+    <AssemblyName>DeadCells.AnimationStudio</AssemblyName>
+    <Version>0.1.0</Version>
+    <Authors>Dead Cells Animation Studio contributors</Authors>
+    <Description>View, study and inspect Dead Cells animations outside the game.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DcAnim.Core\DcAnim.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="data\timing-overrides.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

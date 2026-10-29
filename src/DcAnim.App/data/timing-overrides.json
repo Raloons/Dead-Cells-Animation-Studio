@@ -1,0 +1,6 @@
+{
+  "_note": "Hand-verified gameplay timing for the stock Katana strike chain, observed from the Advanced Alternative Balance weapon CDB (data.cdb_/weapon/Katana.json) and the vanilla v35 weapon sheet. AAB rebalances powers/sounds but keeps these links' charge/hitFrame/animId mechanics (see docs/AS-M1-REPORT.md). Powers are NOT reproduced here; only animation linkage metadata. Values are a starting overlay, not vanilla claims.",
+  "AtkKatanaB2": { "hitFrame": 6, "charge": 0.2, "animSpd": 1, "fxId": "fxBeheadedKatanaB2", "source": "AAB Katana.json link 1 (4-link chain)" },
+  "AtkKatanaB3": { "hitFrame": 5, "charge": 0.2, "animSpd": 1, "fxId": "fxBeheadedKatanaB3", "source": "AAB Katana.json link 2 (4-link chain)" },
+  "AtkKatanaB4": { "hitFrame": 3, "charge": 0.2, "animSpd": 1, "fxId": "fxBeheadedKatanaB", "source": "AAB Katana.json link 3 (4-link chain)" }
+}
