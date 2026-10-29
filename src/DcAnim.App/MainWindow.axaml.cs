@@ -98,6 +98,12 @@ public sealed partial class MainWindow : Window
         Timeline.SeqKeyframeMoved += (p, a, b, fx) => MoveSelectedKeyframeTo(b);
         Timeline.SeqKeyframeDragStarted += () => _doc.BeginDrag("Move keyframe");
         Timeline.SeqKeyframeDragFinished += () => { _doc.EndDrag(); RebuildSequence(); };
+        Timeline.SeqDragCancelled += () => { _doc.AbortDrag(); RebuildSequence(); RefreshFrame(); };
+        Viewport.Preview.MoveStarted += OnViewportDragStart;
+        Viewport.Preview.MoveDelta += OnViewportMove;
+        Viewport.Preview.MoveFinished += OnViewportDragEnd;
+        Viewport.Preview.MoveCancelled += () => { _moveBase = null; _doc.AbortDrag(); RebuildSequence(); RefreshFrame(); };
+        Viewport.Preview.DoubleTapped += (_, _) => FitPreview();
         SeqInspector.ClipSpeedChanged += s => { if (_seqTargetId is { } id && _seqTarget == SeqTargetKind.Clip) { _doc.SetClipSpeed(id, s); RebuildSequence(); } };
         SeqInspector.ProjectFpsChanged += f => { _doc.SetFps(f); RebuildSequence(); };
         SeqInspector.ProjectRenamed += n => { _doc.Rename(n); UpdateTitle(); };
@@ -117,13 +123,10 @@ public sealed partial class MainWindow : Window
         SeqInspector.AudioRenamed += n => { if (_seqTarget == SeqTargetKind.Audio) { RenameAudio(_seqTargetId, n); } };
         SeqInspector.AudioStartChanged += v => { if (_seqTarget == SeqTargetKind.Audio) { _doc.MoveAudio(_seqTargetId, v); RebuildSequence(); } };
         SeqInspector.AudioTrimChanged += v => { if (_seqTarget == SeqTargetKind.Audio) { var a = FindAudio(); if (a is not null) { _doc.TrimAudio(_seqTargetId, v, a.DurationSeconds); RebuildSequence(); } } };
-        SeqInspector.AudioVolumeChanged += v => { if (_seqTarget == SeqTargetKind.Audio) { _doc.SetAudioVolume(_seqTargetId, v); } };
-        SeqInspector.AudioMutedChanged += m => { if (_seqTarget == SeqTargetKind.Audio) { _doc.SetAudioMuted(_seqTargetId, m); RebuildSequence(); } };
+        SeqInspector.AudioVolumeChanged += v => { if (_seqTarget == SeqTargetKind.Audio) { _doc.SetAudioVolume(_seqTargetId, v); _audio.StopAll(); } };
+        SeqInspector.AudioMutedChanged += m => { if (_seqTarget == SeqTargetKind.Audio) { _doc.SetAudioMuted(_seqTargetId, m); _audio.StopAll(); RebuildSequence(); } };
         SeqInspector.AudioRelinkRequested += async () => await RelinkAudioAsync();
         SeqInspector.AudioRemoveRequested += () => { if (_seqTarget == SeqTargetKind.Audio) { _doc.RemoveAudio(_seqTargetId); AfterStructuralEdit(); } };
-        Viewport.Preview.MoveStarted += OnViewportDragStart;
-        Viewport.Preview.MoveDelta += OnViewportMove;
-        Viewport.Preview.MoveFinished += OnViewportDragEnd;
         Viewport.Preview.DoubleTapped += (_, _) => FitPreview();
 
         OpenPakItem.Click += async (_, _) => await OpenPakAsync();
@@ -161,9 +164,10 @@ public sealed partial class MainWindow : Window
         KeyDown += OnKeyDown;
         Closing += async (_, e) =>
         {
-            if (IsEvidenceRun() || _closingConfirmed)
+            if (IsEvidenceRun() || _closingConfirmed || _auditMode)
             {
-                if (!IsEvidenceRun())
+                // Headless runs never persist workspace state.
+                if (!IsEvidenceRun() && !_auditMode)
                     SaveSettings();
                 _audio.Dispose();
                 return;
@@ -188,6 +192,7 @@ public sealed partial class MainWindow : Window
 
         Loaded += (_, _) => AutoLoad();
         Opened += (_, _) => _ = MaybeRunEvidenceModeAsync();
+        Opened += (_, _) => _ = MaybeRunAuditAsync();
     }
 
     // ---------- source loading ----------
@@ -464,6 +469,20 @@ public sealed partial class MainWindow : Window
         {
             Viewport.SetFrame(null);
             Transport.SetPlaying(false);
+            return;
+        }
+        if (clip.FrameCount == 0)
+        {
+            // Empty sequence: actively clear the viewport so no stale frame
+            // lingers from the viewer or a previous composition.
+            Viewport.SetFrame(null);
+            Transport.SetPlaying(false);
+            if (_seqMode)
+            {
+                UpdateSequenceSubtitle();
+                UpdateViewportOverlay();
+                SyncAudio();
+            }
             return;
         }
         var frame = _engine.CurrentFrame;
@@ -991,6 +1010,9 @@ public sealed partial class MainWindow : Window
     /// Recomposes the sequence through the shared renderer (transforms +
     /// effect layers) and refreshes every sequence surface. Preview bitmaps,
     /// timeline thumbnails and all exporters consume these exact frames.
+    /// Composition failures (oversized canvas, corrupt assets) leave the
+    /// previous valid state in place and surface a toast — never a crash,
+    /// never a half-built timeline.
     /// </summary>
     private void RebuildSequence(bool selectLastAdded = false)
     {
@@ -999,49 +1021,71 @@ public sealed partial class MainWindow : Window
         WarnMissingAssets();
 
         int keepGlobal = _engine.CurrentFrameIndex;
-        ClearSeqCache();
-        _seqResolved = SequenceComposer.Resolve(_doc.Project, id => _loader.Catalog.GetFrameRegions(id).Count);
-        if (_seqResolved.Count == 0 || _seqResolved.Sum(r => r.OutputFrames) == 0)
+        IReadOnlyList<ResolvedClip> resolved;
+        RenderedSequence rendered;
+        var bitmaps = new List<WriteableBitmap>();
+        try
         {
-            // Empty sequence: nothing to render. Keep a 0-frame clip so the
-            // engine, timeline and inspector all see a valid empty state.
-            _seqRendered = new RenderedSequence(0, 0, Array.Empty<byte[]>());
-            _seqResolved = Array.Empty<ResolvedClip>();
-        }
-        else
-        {
-            _seqRendered = SequenceCompositor.Render(_doc.Project, _loader, _nativeCache, _fxCache, out var resolved);
-            _seqResolved = resolved;
-        }
-
-        var frames = new List<ClipFrame>(_seqRendered.Frames.Count);
-        for (int i = 0; i < _seqRendered.Frames.Count; i++)
-        {
-            frames.Add(new ClipFrame
+            resolved = SequenceComposer.Resolve(_doc.Project, id => _loader.Catalog.GetFrameRegions(id).Count);
+            if (resolved.Count == 0 || resolved.Sum(r => r.OutputFrames) == 0)
             {
-                Index = i,
-                RegionName = $"seq_{i:0000}",
-                Width = _seqRendered.Width,
-                Height = _seqRendered.Height,
-                Rgba = _seqRendered.Frames[i],
-                Duration = TimeSpan.FromSeconds(1.0 / _doc.Project.Fps),
-            });
-            _seqBitmaps.Add(FrameBitmap.FromRgba(_seqRendered.Frames[i], _seqRendered.Width, _seqRendered.Height));
+                // Empty sequence: nothing to render. Keep a 0-frame clip so the
+                // engine, timeline and inspector all see a valid empty state.
+                rendered = new RenderedSequence(0, 0, Array.Empty<byte[]>());
+                resolved = Array.Empty<ResolvedClip>();
+            }
+            else
+            {
+                rendered = SequenceCompositor.Render(_doc.Project, _loader, _nativeCache, _fxCache, out var r2);
+                resolved = r2;
+            }
+
+            var frames = new List<ClipFrame>(rendered.Frames.Count);
+            for (int i = 0; i < rendered.Frames.Count; i++)
+            {
+                frames.Add(new ClipFrame
+                {
+                    Index = i,
+                    RegionName = $"seq_{i:0000}",
+                    Width = rendered.Width,
+                    Height = rendered.Height,
+                    Rgba = rendered.Frames[i],
+                    Duration = TimeSpan.FromSeconds(1.0 / _doc.Project.Fps),
+                });
+                bitmaps.Add(FrameBitmap.FromRgba(rendered.Frames[i], rendered.Width, rendered.Height));
+            }
+            var clip = new AnimationClip
+            {
+                Id = _doc.Project.Name,
+                Frames = frames,
+                SourceDescription = $"Sequence '{_doc.Project.Name}' ({resolved.Count} clips, {frames.Count} frames @ {_doc.Project.Fps:0.#} FPS)",
+                DefaultFps = _doc.Project.Fps,
+            };
+
+            // Commit: swap in the fully built state only.
+            ClearSeqCache();
+            foreach (var bmp in bitmaps)
+                _seqBitmaps.Add(bmp);
+            bitmaps.Clear();
+            _seqRendered = rendered;
+            _seqResolved = resolved;
+            _seqClip = clip;
         }
-        _seqClip = new AnimationClip
+        catch (Exception ex)
         {
-            Id = _doc.Project.Name,
-            Frames = frames,
-            SourceDescription = $"Sequence '{_doc.Project.Name}' ({_seqResolved.Count} clips, {frames.Count} frames @ {_doc.Project.Fps:0.#} FPS)",
-            DefaultFps = _doc.Project.Fps,
-        };
+            foreach (var bmp in bitmaps)
+                bmp.Dispose();
+            ShowToast($"Could not compose sequence: {ex.Message}");
+            return;
+        }
 
         if (_seqSelectedClip is null || _seqResolved.All(r => r.Clip.Id != _seqSelectedClip))
             _seqSelectedClip = _seqResolved.Count > 0 ? _seqResolved[^1].Clip.Id : null;
         if (selectLastAdded && _seqResolved.Count > 0)
             _seqSelectedClip = _seqResolved[^1].Clip.Id;
-        if (_seqTarget == SeqTargetKind.Clip && !_doc.Project.Clips.Any(c => c.Id == _seqTargetId))
+        if (_seqTarget != SeqTargetKind.None && !SeqTargetExists())
             ClearSeqTarget();
+        ValidateKeySelection();
 
         RefreshSequenceTimeline(Math.Min(keepGlobal, Math.Max(0, _seqClip.FrameCount - 1)));
         RefreshSequenceInspector();
@@ -1163,12 +1207,22 @@ public sealed partial class MainWindow : Window
 
     private void SelectSeqTarget(SeqTargetKind kind, string id, bool seekToStart = true)
     {
+        // Unknown ids are ignored: selection must always reference something real.
+        bool known = kind switch
+        {
+            SeqTargetKind.Clip => _doc.Project.Clips.Any(c => c.Id == id),
+            SeqTargetKind.Effect => _doc.Project.Effects.Any(c => c.Id == id),
+            SeqTargetKind.Audio => _doc.Project.Audio.Any(c => c.Id == id),
+            _ => false,
+        };
+        if (!known)
+            return;
         _seqTarget = kind;
         _seqTargetId = id;
         _seqKeyProp = null;
         if (kind == SeqTargetKind.Clip)
             _seqSelectedClip = id;
-        if (seekToStart)
+        if (seekToStart && _seqClip is { FrameCount: > 0 })
         {
             int start = kind switch
             {
@@ -1178,7 +1232,7 @@ public sealed partial class MainWindow : Window
                     (_doc.Project.Audio.FirstOrDefault(a => a.Id == id)?.StartSeconds ?? 0) * _doc.Project.Fps),
                 _ => _engine.CurrentFrameIndex,
             };
-            _engine.SeekFrame(Math.Min(start, Math.Max(0, (_seqClip?.FrameCount ?? 1) - 1)));
+            _engine.SeekFrame(Math.Clamp(start, 0, _seqClip.FrameCount - 1));
         }
         RefreshSequenceTimeline(_engine.CurrentFrameIndex);
         RefreshSequenceInspector();
@@ -1321,6 +1375,19 @@ public sealed partial class MainWindow : Window
     {
         if (_seqKeyProp is not { } prop)
             return;
+        // The target may have been deleted mid-gesture; abort cleanly.
+        bool alive = _seqTarget switch
+        {
+            SeqTargetKind.Clip => _doc.Project.Clips.Any(c => c.Id == _seqTargetId),
+            SeqTargetKind.Effect => _doc.Project.Effects.Any(c => c.Id == _seqTargetId),
+            _ => false,
+        };
+        if (!alive)
+        {
+            ClearSeqTarget();
+            RebuildSequence();
+            return;
+        }
         if (_seqTarget == SeqTargetKind.Clip)
             _doc.MoveKeyframeDirect(_seqTargetId, prop, _seqKeyFrame, Math.Max(0, toFrame));
         else if (_seqTarget == SeqTargetKind.Effect)
@@ -1514,6 +1581,20 @@ public sealed partial class MainWindow : Window
     private Transform? _moveBase;
     private readonly Stopwatch _moveThrottle = new();
 
+    private void ValidateKeySelection()
+    {
+        if (_seqKeyProp is null)
+            return;
+        IReadOnlyList<TransformKeyframe>? keys = _seqTarget switch
+        {
+            SeqTargetKind.Clip => _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId)?.Keyframes,
+            SeqTargetKind.Effect => _doc.Project.Effects.FirstOrDefault(e => e.Id == _seqTargetId)?.Keyframes,
+            _ => null,
+        };
+        if (keys is null || !keys.Any(k => k.Property == _seqKeyProp && k.Frame == _seqKeyFrame))
+            _seqKeyProp = null;
+    }
+
     private void OnViewportDragStart()
     {
         if (!_seqMode)
@@ -1534,6 +1615,20 @@ public sealed partial class MainWindow : Window
     {
         if (_moveBase is null || !_seqMode)
             return;
+        // The target may have been deleted mid-gesture (e.g. undo); abort cleanly.
+        bool alive = _seqTarget switch
+        {
+            SeqTargetKind.Clip => _doc.Project.Clips.Any(c => c.Id == _seqTargetId),
+            SeqTargetKind.Effect => _doc.Project.Effects.Any(c => c.Id == _seqTargetId),
+            _ => false,
+        };
+        if (!alive)
+        {
+            _moveBase = null;
+            _doc.AbortDrag();
+            RebuildSequence();
+            return;
+        }
         if (_moveThrottle.IsRunning && _moveThrottle.ElapsedMilliseconds < 40)
             return;
         _moveThrottle.Restart();
@@ -2002,6 +2097,37 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private async Task MaybeRunAuditAsync()
+    {
+        try
+        {
+            var args = Environment.GetCommandLineArgs();
+            int i = Array.IndexOf(args, "--audit");
+            if (i < 0 || i + 1 >= args.Length)
+                return;
+            string dir = args[i + 1];
+            await Task.Delay(800); // let auto-load + layout settle
+            if (_loader is null)
+                throw new InvalidOperationException("No game source loaded; cannot audit.");
+            await RunAuditAsync(dir);
+        }
+        catch (Exception ex)
+        {
+            AuditLog($"[FATAL] audit runner: {ex.GetType().FullName}: {ex.Message}{Environment.NewLine}{ex.StackTrace}");
+        }
+        finally
+        {
+            try
+            {
+                File.AppendAllText(Path.Combine(_auditDir, "AUDIT_LOG.txt"),
+                    $"AS-M4 audit finished: {_auditPass} passed, {_auditFail} failed{Environment.NewLine}");
+                Environment.ExitCode = _auditFail > 0 ? 1 : 0;
+            }
+            catch { }
+            await Task.Delay(300);
+            Close();
+        }
+    }
     private async Task MaybeRunEvidenceModeAsync()
     {
         var args = Environment.GetCommandLineArgs();

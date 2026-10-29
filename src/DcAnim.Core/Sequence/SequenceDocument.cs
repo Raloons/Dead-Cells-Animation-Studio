@@ -57,6 +57,8 @@ public sealed class UndoHistory
         _coalesceSnapshot = null;
     }
 
+    internal bool IsCoalescing => _coalesceLabel is not null;
+
     internal void CancelCoalesce()
     {
         _coalesceLabel = null;
@@ -174,6 +176,7 @@ public sealed class SequenceDocument
 
     public bool Undo()
     {
+        AbortDrag(); // abandon any in-progress gesture before time-travel
         var snapshot = History.PopUndo(_currentSnapshot);
         if (snapshot is null)
             return false;
@@ -185,6 +188,7 @@ public sealed class SequenceDocument
 
     public bool Redo()
     {
+        AbortDrag(); // abandon any in-progress gesture before time-travel
         var snapshot = History.PopRedo(_currentSnapshot);
         if (snapshot is null)
             return false;
@@ -377,10 +381,27 @@ public sealed class SequenceDocument
     public void SetClipTransform(string clipId, Transform transform)
     {
         var clip = FindClip(clipId);
+        RequireFinite(transform, "transform");
         Touch($"Transform {clip.AnimationId}");
         clip.BaseTransform = transform ?? throw new ArgumentNullException(nameof(transform));
         _currentSnapshot = Snapshot(_project);
         Changed?.Invoke();
+    }
+
+    private static void RequireFinite(Transform t, string what)
+    {
+        double[] vals = { t.X, t.Y, t.ScaleX, t.ScaleY, t.RotationDegrees, t.Opacity, t.PivotX, t.PivotY };
+        foreach (double v in vals)
+        {
+            if (double.IsNaN(v) || double.IsInfinity(v))
+                throw new ArgumentOutOfRangeException(nameof(t), $"{what} must be finite.");
+        }
+    }
+
+    private static void RequireFiniteKey(TransformKeyframe k, string what)
+    {
+        if (double.IsNaN(k.Value) || double.IsInfinity(k.Value))
+            throw new ArgumentOutOfRangeException(nameof(k), $"{what} value must be finite.");
     }
 
     public TransformKeyframe AddKeyframe(string clipId, TransformProperty property, int frame, double value,
@@ -389,9 +410,10 @@ public sealed class SequenceDocument
         if (frame < 0)
             throw new ArgumentOutOfRangeException(nameof(frame));
         var clip = FindClip(clipId);
+        var key = new TransformKeyframe(property, frame, value, interpolation);
+        RequireFiniteKey(key, "keyframe");
         Touch($"Keyframe {property} @ {frame} ({clip.AnimationId})");
         clip.Keyframes.RemoveAll(k => k.Property == property && k.Frame == frame);
-        var key = new TransformKeyframe(property, frame, value, interpolation);
         clip.Keyframes.Add(key);
         SortKeys(clip);
         _currentSnapshot = Snapshot(_project);
@@ -432,6 +454,9 @@ public sealed class SequenceDocument
     public void SetKeyframeValue(string clipId, TransformProperty property, int frame, double value,
         KeyframeInterpolation interpolation)
     {
+        // Validate the value before touching the document: invalid input must
+        // never reach (or corrupt) stored state, regardless of key existence.
+        RequireFiniteKey(new TransformKeyframe(property, frame, value, interpolation), "keyframe");
         var clip = FindClip(clipId);
         var key = clip.Keyframes.FirstOrDefault(k => k.Property == property && k.Frame == frame)
             ?? throw new KeyNotFoundException("Keyframe not found.");
@@ -565,6 +590,7 @@ public sealed class SequenceDocument
     public void SetEffectTransform(string effectId, Transform transform)
     {
         var e = FindEffect(effectId);
+        RequireFinite(transform, "transform");
         Touch($"Transform {e.Name}");
         e.BaseTransform = transform ?? throw new ArgumentNullException(nameof(transform));
         _currentSnapshot = Snapshot(_project);
@@ -577,9 +603,10 @@ public sealed class SequenceDocument
         if (frame < 0)
             throw new ArgumentOutOfRangeException(nameof(frame));
         var e = FindEffect(effectId);
+        var key = new TransformKeyframe(property, frame, value, interpolation);
+        RequireFiniteKey(key, "effect keyframe");
         Touch($"Effect keyframe {property} @ {frame}");
         e.Keyframes.RemoveAll(k => k.Property == property && k.Frame == frame);
-        var key = new TransformKeyframe(property, frame, value, interpolation);
         e.Keyframes.Add(key);
         e.Keyframes.Sort((a, b) =>
         {

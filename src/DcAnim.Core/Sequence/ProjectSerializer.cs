@@ -12,7 +12,8 @@ public sealed record ProjectValidation(IReadOnlyList<string> Errors, IReadOnlyLi
 /// <summary>
 /// Human-readable <c>.dcanim</c> JSON persistence. v2 (current) adds clip
 /// transforms, keyframes, effect/audio tracks and canvas settings; v1 files
-/// (AS-M3) load via <see cref="MigrateV1ToV2"/> with documented defaults.
+/// (AS-M3: clips only) load directly with documented defaults (identity
+/// transforms, empty keyframe lists, no tracks).
 /// Asset references stay as paths (relative to the project file when
 /// practical) — never embedded artwork.
 /// </summary>
@@ -142,7 +143,18 @@ public static class ProjectSerializer
             CanvasHeight = project.CanvasHeight,
         };
         Directory.CreateDirectory(dir!);
-        File.WriteAllText(path, JsonSerializer.Serialize(dto, Options));
+        string tmp = Path.Combine(dir!, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllText(tmp, JsonSerializer.Serialize(dto, Options));
+            // Atomic replace: readers never see a half-written project, and a
+            // failed save cannot corrupt the existing file.
+            File.Move(tmp, path, overwrite: true);
+        }
+        finally
+        {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+        }
     }
 
     public static SequenceProject Load(string path)
@@ -183,23 +195,6 @@ public static class ProjectSerializer
         return project;
     }
 
-    /// <summary>v1 → v2: identity transform, no keyframes, no tracks.</summary>
-    public static SequenceProject MigrateV1ToV2(SequenceProject v1) =>
-        new()
-        {
-            Version = SequenceProject.CurrentVersion,
-            Name = v1.Name,
-            Fps = v1.Fps,
-            Clips = v1.Clips.Select(c => new SequenceClip
-            {
-                Id = c.Id,
-                AnimationId = c.AnimationId,
-                Speed = c.Speed,
-                BaseTransform = Transform.Identity,
-                Keyframes = new List<TransformKeyframe>(),
-            }).ToList(),
-        };
-
     /// <summary>Resolve a stored asset reference against the project location.</summary>
     public static string ResolveAsset(string stored, string? projectDir)
     {
@@ -228,13 +223,13 @@ public static class ProjectSerializer
         Version = SequenceProject.CurrentVersion,
         Name = string.IsNullOrWhiteSpace(dto.Name) ? "Untitled" : dto.Name,
         Fps = dto.Fps,
-        CanvasWidth = Math.Max(0, dto.CanvasWidth),
-        CanvasHeight = Math.Max(0, dto.CanvasHeight),
+        CanvasWidth = dto.CanvasWidth,
+        CanvasHeight = dto.CanvasHeight,
         Clips = dto.Clips.Select(c => new SequenceClip
         {
             Id = string.IsNullOrWhiteSpace(c.Id) ? Guid.NewGuid().ToString("N") : c.Id,
             AnimationId = c.Animation ?? string.Empty,
-            Speed = c.Speed <= 0 ? 1.0 : c.Speed,
+            Speed = c.Speed,
             BaseTransform = FromDto(c.Transform),
             Keyframes = c.Keyframes.Select(FromDto).Where(k => k is not null).Select(k => k!).ToList(),
         }).ToList(),
@@ -243,8 +238,8 @@ public static class ProjectSerializer
             Id = string.IsNullOrWhiteSpace(e.Id) ? Guid.NewGuid().ToString("N") : e.Id,
             Name = string.IsNullOrWhiteSpace(e.Name) ? "Effect" : e.Name,
             ImagePath = ResolveAsset(e.Image ?? string.Empty, dir),
-            StartFrame = Math.Max(0, e.StartFrame),
-            DurationFrames = Math.Max(1, e.DurationFrames),
+            StartFrame = e.StartFrame,
+            DurationFrames = e.DurationFrames,
             Layer = e.Layer,
             BaseTransform = FromDto(e.Transform),
             Keyframes = e.Keyframes.Select(FromDto).Where(k => k is not null).Select(k => k!).ToList(),
@@ -254,10 +249,10 @@ public static class ProjectSerializer
             Id = string.IsNullOrWhiteSpace(a.Id) ? Guid.NewGuid().ToString("N") : a.Id,
             Name = string.IsNullOrWhiteSpace(a.Name) ? "Audio" : a.Name,
             AudioPath = ResolveAsset(a.File ?? string.Empty, dir),
-            StartSeconds = Math.Max(0, a.StartSeconds),
-            TrimStartSeconds = Math.Max(0, a.TrimStartSeconds),
-            DurationSeconds = a.DurationSeconds is > 0 ? a.DurationSeconds : null,
-            Volume = Math.Clamp(a.Volume, 0.0, 1.0),
+            StartSeconds = a.StartSeconds,
+            TrimStartSeconds = a.TrimStartSeconds,
+            DurationSeconds = a.DurationSeconds,
+            Volume = a.Volume,
             Muted = a.Muted,
         }).ToList(),
     };
@@ -265,7 +260,7 @@ public static class ProjectSerializer
     private static Transform FromDto(TransformDto? d) => d is null ? Transform.Identity : new Transform
     {
         X = d.X, Y = d.Y, ScaleX = d.ScaleX, ScaleY = d.ScaleY,
-        RotationDegrees = d.RotationDegrees, Opacity = Math.Clamp(d.Opacity, 0, 1),
+        RotationDegrees = d.RotationDegrees, Opacity = d.Opacity,
         PivotX = d.PivotX, PivotY = d.PivotY, FlipH = d.FlipH, FlipV = d.FlipV,
     };
 
@@ -280,8 +275,6 @@ public static class ProjectSerializer
     {
         if (!Enum.TryParse<TransformProperty>(k.Property, ignoreCase: true, out var prop))
             return null; // forward-compatible: skip unknown properties
-        if (k.Frame < 0)
-            return null;
         if (!Enum.TryParse<KeyframeInterpolation>(k.Interpolation, ignoreCase: true, out var interp))
             interp = KeyframeInterpolation.Hold;
         return new TransformKeyframe(prop, k.Frame, k.Value, interp);
@@ -337,6 +330,7 @@ public static class ProjectSerializer
                 errors.Add($"clip {i} ('{clip.AnimationId}'): speed must be a positive finite number");
             CheckId(errors, ids, clip.Id, $"clip {i}");
             ValidateKeys(clip.Keyframes, $"clip {i}", errors);
+            ValidateTransform(clip.BaseTransform, $"clip {i}", errors);
         }
         for (int i = 0; i < project.Effects.Count; i++)
         {
@@ -349,6 +343,7 @@ public static class ProjectSerializer
             if (e.StartFrame < 0)
                 errors.Add($"effect {i}: start frame must not be negative");
             ValidateKeys(e.Keyframes, $"effect {i}", errors);
+        ValidateTransform(e.BaseTransform, $"effect {i}", errors);
         }
         for (int i = 0; i < project.Audio.Count; i++)
         {
@@ -356,14 +351,16 @@ public static class ProjectSerializer
             CheckId(errors, ids, a.Id, $"audio {i}");
             if (string.IsNullOrWhiteSpace(a.AudioPath))
                 errors.Add($"audio {i}: missing file path");
-            if (a.StartSeconds < 0 || a.TrimStartSeconds < 0)
-                errors.Add($"audio {i}: times must not be negative");
-            if (a.DurationSeconds is <= 0)
-                errors.Add($"audio {i}: duration must be positive");
-            if (a.Volume < 0 || a.Volume > 1)
+            if (IsBadTime(a.StartSeconds) || a.StartSeconds < 0 || IsBadTime(a.TrimStartSeconds) || a.TrimStartSeconds < 0)
+                errors.Add($"audio {i}: times must be non-negative finite numbers");
+            if (a.DurationSeconds is { } dd && (dd <= 0 || double.IsNaN(dd) || double.IsInfinity(dd)))
+                errors.Add($"audio {i}: duration must be a positive finite number");
+            if (double.IsNaN(a.Volume) || double.IsInfinity(a.Volume) || a.Volume < 0 || a.Volume > 1)
                 errors.Add($"audio {i}: volume must be 0..1");
         }
     }
+
+    private static bool IsBadTime(double v) => double.IsNaN(v) || double.IsInfinity(v);
 
     private static void CheckId(List<string> errors, HashSet<string> ids, string? id, string what)
     {
@@ -381,6 +378,19 @@ public static class ProjectSerializer
                 errors.Add($"{what}: keyframe before frame 0");
             if (double.IsNaN(k.Value) || double.IsInfinity(k.Value))
                 errors.Add($"{what}: keyframe value must be finite");
+        }
+    }
+
+    private static void ValidateTransform(Transform t, string what, List<string> errors)
+    {
+        double[] vals = { t.X, t.Y, t.ScaleX, t.ScaleY, t.RotationDegrees, t.Opacity, t.PivotX, t.PivotY };
+        foreach (double v in vals)
+        {
+            if (double.IsNaN(v) || double.IsInfinity(v))
+            {
+                errors.Add($"{what}: transform must be finite");
+                return;
+            }
         }
     }
 }

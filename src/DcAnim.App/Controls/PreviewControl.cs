@@ -90,6 +90,9 @@ public sealed class PreviewControl : Control
     public event Action<Vector>? MoveDelta;
     public event Action? MoveStarted;
     public event Action? MoveFinished;
+    /// <summary>Raised when an in-progress move is lost (e.g. pointer capture
+    /// stolen); hosts must abort any open coalesced undo group.</summary>
+    public event Action? MoveCancelled;
 
     public override void Render(DrawingContext context)
     {
@@ -151,21 +154,49 @@ public sealed class PreviewControl : Control
     private Point? _panStart;
     private Vector _panOrigin;
     private bool _moving;
+    private bool _moveArmed;
+    private bool _moveStarted;
 
     protected override void OnPointerPressed(Avalonia.Input.PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
+        if (_panStart is not null)
+        {
+            bool wasActive = _moving || _moveArmed;
+            ResetPointerState();
+            if (wasActive)
+                MoveCancelled?.Invoke();
+            return;
+        }
         var props = e.GetCurrentPoint(this).Properties;
         if (props.IsLeftButtonPressed)
         {
             _panStart = e.GetPosition(this);
             _panOrigin = Pan;
             _moving = false;
-            if (MoveEnabled)
-                MoveStarted?.Invoke();
+            _moveArmed = MoveEnabled;
+            _moveStarted = false;
             e.Pointer.Capture(this);
             e.Handled = true;
         }
+    }
+
+    protected override void OnPointerCaptureLost(Avalonia.Input.PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        bool wasActive = _panStart is not null && (_moving || _moveArmed);
+        ResetPointerState();
+        if (wasActive)
+            MoveCancelled?.Invoke();
+    }
+
+    private void ResetPointerState()
+    {
+        _panStart = null;
+        _moving = false;
+        _moveArmed = false;
+        _moveStarted = false;
+        InvalidateVisual();
     }
 
     protected override void OnPointerMoved(Avalonia.Input.PointerEventArgs e)
@@ -177,10 +208,19 @@ public sealed class PreviewControl : Control
         if (!_moving && (delta.X * delta.X + delta.Y * delta.Y <= 16))
             return;
         _moving = true;
-        if (MoveEnabled)
-            MoveDelta?.Invoke(delta);
-        else
+        if (!MoveEnabled)
+        {
             Pan = _panOrigin + delta;
+            return;
+        }
+        if (_moveArmed)
+        {
+            // Begin the coalesced undo group only once real movement starts.
+            _moveArmed = false;
+            _moveStarted = true;
+            MoveStarted?.Invoke();
+        }
+        MoveDelta?.Invoke(delta);
     }
 
     protected override void OnPointerReleased(Avalonia.Input.PointerReleasedEventArgs e)
@@ -188,10 +228,9 @@ public sealed class PreviewControl : Control
         base.OnPointerReleased(e);
         if (_panStart is null)
             return;
-        bool wasMoving = _moving;
-        _panStart = null;
-        _moving = false;
-        if (MoveEnabled && wasMoving)
+        bool wasStarted = _moveStarted;
+        ResetPointerState();
+        if (wasStarted)
             MoveFinished?.Invoke();
     }
 }

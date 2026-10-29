@@ -202,6 +202,10 @@ public static class SequenceCompositor
         return (w, h);
     }
 
+    /// <summary>Maximum canvas dimension in pixels; larger requests are refused
+    /// with a clear error instead of allocating gigabytes.</summary>
+    public const int MaxCanvasDimension = 4096;
+
     public static RenderedSequence Render(
         SequenceProject project,
         AnimationLoader loader,
@@ -213,6 +217,10 @@ public static class SequenceCompositor
     {
         resolved = SequenceComposer.Resolve(project, id => loader.Catalog.GetFrameRegions(id).Count);
         var (w, h) = CanvasSize(project, loader, effects);
+        if (w > MaxCanvasDimension || h > MaxCanvasDimension)
+            throw new InvalidDataException(
+                $"Sequence canvas {w}x{h} exceeds the {MaxCanvasDimension}px limit. " +
+                "Reduce the canvas size or effect/clip scale.");
         int total = resolved.Sum(r => r.OutputFrames);
         var frames = new List<byte[]>(total);
         int g = 0;

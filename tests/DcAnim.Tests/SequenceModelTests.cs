@@ -130,6 +130,42 @@ public sealed class SequenceModelTests
     }
 
     [Fact]
+    public void Serializer_RejectsDuplicateIds()
+    {
+        string path = WriteTemp("dup.json",
+            """{"format":"dcanim","version":2,"name":"Dup","fps":30,"clips":[{"id":"same","animation":"A","speed":1},{"id":"same","animation":"B","speed":1}],"effects":[],"audio":[]}""");
+        try
+        {
+            var ex = Assert.Throws<InvalidDataException>(() => ProjectSerializer.Load(path));
+            Assert.Contains("duplicate id", ex.Message);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void Serializer_RejectsNonFiniteNumbers()
+    {
+        // NaN encoded per JSON spec text (System.Text.Json rejects by default).
+        string nan = WriteTemp("nan.json",
+            """{"format":"dcanim","version":2,"name":"Bad","fps":30,"clips":[{"id":"c1","animation":"A","speed":1,"keyframes":[{"property":"X","frame":0,"value":NaN,"interpolation":"Hold"}]}],"effects":[],"audio":[]}""");
+        try { Assert.ThrowsAny<Exception>(() => ProjectSerializer.Load(nan)); }
+        finally { File.Delete(nan); }
+
+        // Infinity transform value must fail validation, not poison the project.
+        string inf = WriteTemp("inf.json",
+            """{"format":"dcanim","version":2,"name":"Bad","fps":30,"clips":[{"id":"c1","animation":"A","speed":1,"transform":{"x":0,"y":0,"scaleX":1,"scaleY":1,"rotationDegrees":0,"opacity":1,"pivotX":0.5,"pivotY":"Infinity","flipH":false,"flipV":false},"keyframes":[]}],"effects":[],"audio":[]}""");
+        try { Assert.Throws<InvalidDataException>(() => ProjectSerializer.Load(inf)); }
+        finally { File.Delete(inf); }
+    }
+
+    private static string WriteTemp(string name, string content)
+    {
+        string p = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + "-" + name);
+        File.WriteAllText(p, content);
+        return p;
+    }
+
+    [Fact]
     public void Serializer_DetectsMissingAnimations()
     {
         var project = new SequenceProject { Name = "t" };
@@ -185,5 +221,103 @@ public sealed class SequenceModelTests
         doc.New();
         Assert.False(doc.IsDirty);
         Assert.Empty(doc.Project.Clips);
+    }
+
+    [Fact]
+    public void Document_RejectsNonFiniteInput()
+    {
+        var doc = new SequenceDocument();
+        var c = doc.AddClip("A", 1.0);
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            doc.SetClipTransform(c.Id, Transform.Identity with { Opacity = double.NaN }));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            doc.SetClipTransform(c.Id, Transform.Identity with { X = double.PositiveInfinity }));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            doc.AddKeyframe(c.Id, TransformProperty.X, 0, double.NaN));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            doc.SetKeyframeValue(c.Id, TransformProperty.X, 0, double.PositiveInfinity, KeyframeInterpolation.Hold));
+        var e = doc.AddEffect("e.png", 0, 5);
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            doc.SetEffectTransform(e.Id, Transform.Identity with { ScaleY = double.NegativeInfinity }));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            doc.AddEffectKeyframe(e.Id, TransformProperty.Opacity, 0, double.NaN));
+        // Rejected edits must not create history entries: only the AddClip and
+        // AddEffect above produced undo steps.
+        Assert.True(doc.History.CanUndo);
+        doc.Undo();
+        Assert.True(doc.History.CanUndo);
+        doc.Undo();
+        Assert.False(doc.History.CanUndo);
+        Assert.Empty(doc.Project.Clips);
+        Assert.False(doc.IsDirty);
+    }
+
+    [Fact]
+    public void History_CappedAt100()
+    {
+        var doc = new SequenceDocument();
+        doc.New("Cap");
+        doc.AddClip("A", 1.0);
+        for (int i = 0; i < 115; i++)
+            doc.SetClipSpeed(doc.Project.Clips[0].Id, 1.0 + (i % 5) * 0.1);
+        int undos = 0;
+        while (doc.History.CanUndo && undos < 1000)
+        {
+            Assert.True(doc.Undo());
+            undos++;
+        }
+        Assert.True(undos <= 101, $"history cap respected, undid {undos}");
+        Assert.False(doc.Undo());
+    }
+
+    [Fact]
+    public void UndoRedo_SymmetricHistory()
+    {
+        var doc = new SequenceDocument();
+        doc.New("Sym");
+        var a = doc.AddClip("A", 1.0);
+        doc.SetClipSpeed(a.Id, 2.0);
+        int undone = 0;
+        while (doc.History.CanUndo && undone < 1000) { doc.Undo(); undone++; }
+        Assert.True(undone > 0);
+        int redone = 0;
+        while (doc.History.CanRedo) { doc.Redo(); redone++; if (redone > 1000) break; }
+        Assert.Equal(undone, redone);
+        Assert.Equal(2.0, doc.Project.Clips[0].Speed);
+    }
+
+    [Fact]
+    public void Validate_RejectsCorruptAndDuplicateContent()
+    {
+        string WriteTemp(string name, string json)
+        {
+            string p = Path.Combine(Path.GetTempPath(), $"asm41-{Guid.NewGuid():N}-{name}");
+            File.WriteAllText(p, json);
+            return p;
+        }
+        // Negative keyframe index.
+        string p1 = WriteTemp("bad.json",
+            """{"format":"dcanim","version":2,"name":"Bad","fps":30,"clips":[{"id":"c1","animation":"A","speed":1,"transform":{"x":0,"y":0,"scaleX":1,"scaleY":1,"rotationDegrees":0,"opacity":1,"pivotX":0.5,"pivotY":0.5,"flipH":false,"flipV":false},"keyframes":[{"property":"X","frame":-3,"value":1,"interpolation":"Hold"}]}],"effects":[],"audio":[]}""");
+        // Duplicate clip ids.
+        string p2 = WriteTemp("dup.json",
+            """{"format":"dcanim","version":2,"name":"Dup","fps":30,"clips":[{"id":"same","animation":"A","speed":1},{"id":"same","animation":"B","speed":1}],"effects":[],"audio":[]}""");
+        // NaN encoded per JSON spec spelling.
+        string p3 = WriteTemp("nanlit.json",
+            """{"format":"dcanim","version":2,"name":"Bad","fps":30,"clips":[{"id":"c1","animation":"A","speed":1,"transform":null,"keyframes":[{"property":"X","frame":0,"value":NaN,"interpolation":"Hold"}]}],"effects":[],"audio":[]}""");
+        try
+        {
+            var ex1 = Assert.Throws<InvalidDataException>(() => ProjectSerializer.Load(p1));
+            Assert.Contains("keyframe", ex1.Message);
+            var ex2 = Assert.Throws<InvalidDataException>(() => ProjectSerializer.Load(p2));
+            Assert.Contains("duplicate", ex2.Message);
+            // System.Text.Json rejects NaN literals by default.
+            Assert.ThrowsAny<Exception>(() => ProjectSerializer.Load(p3));
+        }
+        finally
+        {
+            File.Delete(p1);
+            File.Delete(p2);
+            File.Delete(p3);
+        }
     }
 }

@@ -113,6 +113,7 @@ public sealed class SequenceTrackControl : Control
     private string? _dragAudioId;
     private (TransformProperty Prop, int Frame)? _dragKey;
     private bool _dragKeyIsEffect;
+    private bool _pressArmed; // press converted to coalesced drag once threshold crossed
     private bool _dragging;
     private int _dropIndex = -1; // library drop target, -1 = none
     private double _dropX;        // internal-drag indicator position
@@ -141,6 +142,9 @@ public sealed class SequenceTrackControl : Control
     public event Action<TransformProperty, int, int, bool>? KeyframeMoved; // prop, from, to, isEffect
     public event Action? KeyframeDragStarted;
     public event Action? KeyframeDragFinished;
+    /// <summary>Raised when an in-progress gesture is lost (e.g. pointer
+    /// capture stolen); hosts must abort any open coalesced undo group.</summary>
+    public event Action? DragCancelled;
 
     public IList<ClipBlock>? Clips { get => GetValue(ClipsProperty); set => SetValue(ClipsProperty, value); }
     public string? SelectedClipId { get => GetValue(SelectedClipIdProperty); set => SetValue(SelectedClipIdProperty, value); }
@@ -449,6 +453,17 @@ public sealed class SequenceTrackControl : Control
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
+        if (_pressPoint is not null)
+        {
+            // A press arrived while a gesture was still open (e.g. lost
+            // release): recycle it as a cancellation so host undo state
+            // cannot leak an open coalesce group.
+            bool wasActive = _dragging || _pressArmed;
+            ResetDragState();
+            if (wasActive)
+                DragCancelled?.Invoke();
+            return;
+        }
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             return;
         _pressPoint = e.GetPosition(this);
@@ -459,10 +474,29 @@ public sealed class SequenceTrackControl : Control
         _dragKey = hit.Kind == HitKind.Key ? (hit.Prop, hit.Frame) : null;
         _dragKeyIsEffect = ShowEffectKeys;
         _dragging = false;
-        if (hit.Kind == HitKind.Key)
-            KeyframeDragStarted?.Invoke();
+        _pressArmed = hit.Kind == HitKind.Key;
         e.Pointer.Capture(this);
         e.Handled = true;
+    }
+
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        bool wasActive = _pressPoint is not null && (_dragging || _pressArmed);
+        ResetDragState();
+        if (wasActive)
+            DragCancelled?.Invoke();
+    }
+
+    private void ResetDragState()
+    {
+        _pressPoint = null;
+        _dragClipId = _dragEffectId = _dragAudioId = null;
+        _dragKey = null;
+        _dragging = false;
+        _pressArmed = false;
+        _dropIndex = -1;
+        InvalidateVisual();
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
@@ -474,7 +508,15 @@ public sealed class SequenceTrackControl : Control
         var dx = pos.X - _pressPoint.Value.X;
         var dy = pos.Y - _pressPoint.Value.Y;
         if (!_dragging && dx * dx + dy * dy > 16)
+        {
             _dragging = true;
+            if (_dragKey is not null && _pressArmed)
+            {
+                // Begin the coalesced undo group only once real movement starts.
+                _pressArmed = false;
+                KeyframeDragStarted?.Invoke();
+            }
+        }
         if (!_dragging)
             return;
 
@@ -546,12 +588,8 @@ public sealed class SequenceTrackControl : Control
                 case HitKind.Key: KeyframeSelected?.Invoke(hit.Prop, hit.Frame, ShowEffectKeys); break;
             }
         }
-        _pressPoint = null;
-        _dragClipId = _dragEffectId = _dragAudioId = null;
-        _dragKey = null;
-        _dragging = false;
-        _dropIndex = -1;
-        InvalidateVisual();
+        _pressArmed = false;
+        ResetDragState();
     }
 
     private void OnDragOver(object? sender, DragEventArgs e)

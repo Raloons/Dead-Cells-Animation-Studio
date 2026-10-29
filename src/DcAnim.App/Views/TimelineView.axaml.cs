@@ -32,6 +32,7 @@ public sealed partial class TimelineView : UserControl
     public event Action<TransformProperty, int, int, bool>? SeqKeyframeMoved;
     public event Action? SeqKeyframeDragStarted;
     public event Action? SeqKeyframeDragFinished;
+    public event Action? SeqDragCancelled;
 
     public bool IsSequenceMode { get; private set; }
 
@@ -55,6 +56,7 @@ public sealed partial class TimelineView : UserControl
         SeqTrack.KeyframeMoved += (p, a, b, fx) => SeqKeyframeMoved?.Invoke(p, a, b, fx);
         SeqTrack.KeyframeDragStarted += () => SeqKeyframeDragStarted?.Invoke();
         SeqTrack.KeyframeDragFinished += () => SeqKeyframeDragFinished?.Invoke();
+        SeqTrack.DragCancelled += () => SeqDragCancelled?.Invoke();
         ZoomSlider.ValueChanged += (_, _) =>
         {
             if (!_settingZoom)

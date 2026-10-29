@@ -61,10 +61,12 @@ public sealed partial class TransformEditorView : UserControl
 
     private Transform Read() => new()
     {
-        X = NumX.Value is { } vx ? (double)vx : 0,
-        Y = NumY.Value is { } vy ? (double)vy : 0,
-        ScaleX = Math.Max(0.01, NumSx.Value is { } vsx ? (double)vsx : 1),
-        ScaleY = Math.Max(0.01, NumSy.Value is { } vsy ? (double)vsy : 1),
+        // Clamp to sane ranges: extreme values would explode the canvas or
+        // produce invisible frames, and sliders already bound the common cases.
+        X = Math.Clamp(NumX.Value is { } vx ? (double)vx : 0, -20000, 20000),
+        Y = Math.Clamp(NumY.Value is { } vy ? (double)vy : 0, -20000, 20000),
+        ScaleX = Math.Clamp(NumSx.Value is { } vsx ? (double)vsx : 1, 0.01, 64),
+        ScaleY = Math.Clamp(NumSy.Value is { } vsy ? (double)vsy : 1, 0.01, 64),
         RotationDegrees = NumRot.Value is { } vr ? (double)vr : 0,
         Opacity = Math.Clamp(NumOp.Value is { } vo ? (double)vo : 1, 0, 1),
         PivotX = NumPx.Value is { } vpx ? (double)vpx : 0.5,

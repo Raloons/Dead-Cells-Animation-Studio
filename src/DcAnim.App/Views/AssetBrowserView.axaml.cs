@@ -149,6 +149,8 @@ public sealed partial class AssetBrowserView : UserControl
 
     public void FocusSearch() => SearchBox.Focus();
 
+    public void Search(string query) => SearchBox.Text = query;
+
     public void ForEachItem(Action<AnimationListItem> action)
     {
         foreach (var item in _allItems)
