@@ -1,35 +1,122 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:DcAnim.App.Views"
              x:Class="DcAnim.App.Views.SequenceInspectorView">
   <ScrollViewer>
     <StackPanel Spacing="8">
-      <Expander IsExpanded="True" HorizontalAlignment="Stretch">
+      <Expander x:Name="ClipSection" IsExpanded="True" HorizontalAlignment="Stretch">
         <Expander.Header>
           <TextBlock Text="CLIP" Classes="ws-panel-header" Margin="0"/>
         </Expander.Header>
-        <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
-          <TextBlock Grid.Row="0" Grid.Column="0" Text="Animation" Classes="ws-prop-label"/>
-          <TextBlock Grid.Row="0" Grid.Column="1" x:Name="ClipAnim" Classes="ws-prop-value" Text="—"/>
-          <TextBlock Grid.Row="1" Grid.Column="0" Text="Speed" Classes="ws-prop-label" VerticalAlignment="Center"/>
-          <NumericUpDown Grid.Row="1" Grid.Column="1" x:Name="ClipSpeed" Minimum="0.25" Maximum="4"
-                         Increment="0.25" FormatString="0.##x" Width="110" HorizontalAlignment="Left"
-                         ToolTip.Tip="Clip playback speed (0.25–4×)"/>
-          <TextBlock Grid.Row="2" Grid.Column="0" Text="Presets" Classes="ws-prop-label" VerticalAlignment="Center"/>
-          <ComboBox Grid.Row="2" Grid.Column="1" x:Name="ClipSpeedPreset" Width="110" HorizontalAlignment="Left"
-                    ToolTip.Tip="Common speeds">
-            <ComboBoxItem Content="0.25×" Tag="0.25"/>
-            <ComboBoxItem Content="0.5×" Tag="0.5"/>
-            <ComboBoxItem Content="0.75×" Tag="0.75"/>
-            <ComboBoxItem Content="1×" Tag="1"/>
-            <ComboBoxItem Content="1.25×" Tag="1.25"/>
-            <ComboBoxItem Content="1.5×" Tag="1.5"/>
-            <ComboBoxItem Content="2×" Tag="2"/>
-          </ComboBox>
-          <TextBlock Grid.Row="3" Grid.Column="0" Text="Frames" Classes="ws-prop-label"/>
-          <TextBlock Grid.Row="3" Grid.Column="1" x:Name="ClipFrames" Classes="ws-prop-value" Text="—"/>
-          <TextBlock Grid.Row="4" Grid.Column="0" Text="Duration" Classes="ws-prop-label"/>
-          <TextBlock Grid.Row="4" Grid.Column="1" x:Name="ClipDuration" Classes="ws-prop-value" Text="—"/>
-        </Grid>
+        <StackPanel Spacing="4">
+          <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Animation" Classes="ws-prop-label"/>
+            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="ClipAnim" Classes="ws-prop-value" Text="—"/>
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Speed" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Row="1" Grid.Column="1" x:Name="ClipSpeed" Minimum="0.25" Maximum="4"
+                           Increment="0.25" FormatString="0.##x" Width="110" HorizontalAlignment="Left"
+                           ToolTip.Tip="Clip playback speed (0.25–4×)"/>
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Presets" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <ComboBox Grid.Row="2" Grid.Column="1" x:Name="ClipSpeedPreset" Width="110" HorizontalAlignment="Left"
+                      ToolTip.Tip="Common speeds">
+              <ComboBoxItem Content="0.25×" Tag="0.25"/>
+              <ComboBoxItem Content="0.5×" Tag="0.5"/>
+              <ComboBoxItem Content="0.75×" Tag="0.75"/>
+              <ComboBoxItem Content="1×" Tag="1"/>
+              <ComboBoxItem Content="1.25×" Tag="1.25"/>
+              <ComboBoxItem Content="1.5×" Tag="1.5"/>
+              <ComboBoxItem Content="2×" Tag="2"/>
+            </ComboBox>
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="Frames" Classes="ws-prop-label"/>
+            <TextBlock Grid.Row="3" Grid.Column="1" x:Name="ClipFrames" Classes="ws-prop-value" Text="—"/>
+          </Grid>
+          <TextBlock Text="TRANSFORM" Classes="ws-panel-header" Margin="0,6,0,0"/>
+          <views:TransformEditorView x:Name="ClipTransform"/>
+          <TextBlock Text="KEYFRAMES" Classes="ws-panel-header" Margin="0,6,0,0"/>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <ComboBox x:Name="KeyProperty" Width="120" ToolTip.Tip="Property to keyframe"/>
+            <Button x:Name="AddKeyButton" Classes="ws-tool" Content="Key @ playhead"
+                    ToolTip.Tip="Add keyframe at the playhead with the current value"/>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0">
+            <Button x:Name="PrevKeyButton" Classes="ws-tool" Content="◀ Prev"
+                    ToolTip.Tip="Previous keyframe"/>
+            <Button x:Name="NextKeyButton" Classes="ws-tool" Content="Next ▶"
+                    ToolTip.Tip="Next keyframe"/>
+          </StackPanel>
+          <ListBox x:Name="KeyList" Background="Transparent" Padding="0" Margin="0,4,0,0"
+                   MaxHeight="140">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <DockPanel Margin="0,1">
+                  <Button DockPanel.Dock="Right" Content="×" Padding="6,0" FontSize="12"
+                          ToolTip.Tip="Delete keyframe" Tag="{Binding}"
+                          Click="OnDeleteKeyClick"/>
+                  <TextBlock Text="{Binding Label}" FontSize="12" VerticalAlignment="Center"
+                             Foreground="{StaticResource WsTextPrimary}"/>
+                </DockPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </StackPanel>
+      </Expander>
+
+      <Expander x:Name="EffectSection" IsExpanded="True" HorizontalAlignment="Stretch" IsVisible="False">
+        <Expander.Header>
+          <TextBlock Text="EFFECT" Classes="ws-panel-header" Margin="0"/>
+        </Expander.Header>
+        <StackPanel Spacing="4">
+          <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <TextBox Grid.Row="0" Grid.Column="1" x:Name="FxName"/>
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Image" Classes="ws-prop-label"/>
+            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="FxImage" Classes="ws-prop-value" FontSize="11" Text="—"/>
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Start frame" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Row="2" Grid.Column="1" x:Name="FxStart" Minimum="0" Maximum="100000" Width="110" HorizontalAlignment="Left"/>
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="Duration" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Row="3" Grid.Column="1" x:Name="FxDuration" Minimum="1" Maximum="100000" Width="110" HorizontalAlignment="Left"/>
+            <TextBlock Grid.Row="4" Grid.Column="0" Text="Layer" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Row="4" Grid.Column="1" x:Name="FxLayer" Minimum="0" Maximum="16" Width="110" HorizontalAlignment="Left"
+                           ToolTip.Tip="Higher layers draw on top"/>
+          </Grid>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Button x:Name="FxRelinkButton" Classes="ws-tool" Content="Relink image…"
+                    ToolTip.Tip="Choose a replacement image file"/>
+            <Button x:Name="FxRemoveButton" Classes="ws-tool" Content="Remove"
+                    ToolTip.Tip="Remove this effect clip"/>
+          </StackPanel>
+          <TextBlock Text="TRANSFORM" Classes="ws-panel-header" Margin="0,6,0,0"/>
+          <views:TransformEditorView x:Name="FxTransform"/>
+        </StackPanel>
+      </Expander>
+
+      <Expander x:Name="AudioSection" IsExpanded="True" HorizontalAlignment="Stretch" IsVisible="False">
+        <Expander.Header>
+          <TextBlock Text="AUDIO" Classes="ws-panel-header" Margin="0"/>
+        </Expander.Header>
+        <StackPanel Spacing="4">
+          <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <TextBox Grid.Row="0" Grid.Column="1" x:Name="AuName"/>
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="File" Classes="ws-prop-label"/>
+            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="AuFile" Classes="ws-prop-value" FontSize="11" Text="—"/>
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Start (s)" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Row="2" Grid.Column="1" x:Name="AuStart" Minimum="0" Maximum="3600" Increment="0.1" FormatString="0.##" Width="110" HorizontalAlignment="Left"/>
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="Trim (s)" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Row="3" Grid.Column="1" x:Name="AuTrim" Minimum="0" Maximum="3600" Increment="0.1" FormatString="0.##" Width="110" HorizontalAlignment="Left"
+                           ToolTip.Tip="Skip this much from the start of the file"/>
+            <TextBlock Grid.Row="4" Grid.Column="0" Text="Volume" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <Slider Grid.Row="4" Grid.Column="1" x:Name="AuVolume" Minimum="0" Maximum="1" Width="130" HorizontalAlignment="Left"
+                    ToolTip.Tip="Gain 0–100%"/>
+          </Grid>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <CheckBox x:Name="AuMute" Content="Mute"/>
+            <Button x:Name="AuRelinkButton" Classes="ws-tool" Content="Relink file…"
+                    ToolTip.Tip="Choose a replacement WAV file"/>
+            <Button x:Name="AuRemoveButton" Classes="ws-tool" Content="Remove"
+                    ToolTip.Tip="Remove this audio clip"/>
+          </StackPanel>
+        </StackPanel>
       </Expander>
 
       <Expander IsExpanded="True" HorizontalAlignment="Stretch">

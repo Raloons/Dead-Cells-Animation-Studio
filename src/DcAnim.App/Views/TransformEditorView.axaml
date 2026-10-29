@@ -1,0 +1,26 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DcAnim.App.Views.TransformEditorView">
+  <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+    <TextBlock Grid.Row="0" Grid.Column="0" Text="X" Classes="ws-prop-label" VerticalAlignment="Center"/>
+    <NumericUpDown Grid.Row="0" Grid.Column="1" x:Name="NumX" FormatString="0.##" Width="130" HorizontalAlignment="Left"/>
+    <TextBlock Grid.Row="1" Grid.Column="0" Text="Y" Classes="ws-prop-label" VerticalAlignment="Center"/>
+    <NumericUpDown Grid.Row="1" Grid.Column="1" x:Name="NumY" FormatString="0.##" Width="130" HorizontalAlignment="Left"/>
+    <TextBlock Grid.Row="2" Grid.Column="0" Text="Scale X" Classes="ws-prop-label" VerticalAlignment="Center"/>
+    <NumericUpDown Grid.Row="2" Grid.Column="1" x:Name="NumSx" Minimum="0.01" Maximum="16" Increment="0.05" FormatString="0.##" Width="130" HorizontalAlignment="Left"/>
+    <TextBlock Grid.Row="3" Grid.Column="0" Text="Scale Y" Classes="ws-prop-label" VerticalAlignment="Center"/>
+    <NumericUpDown Grid.Row="3" Grid.Column="1" x:Name="NumSy" Minimum="0.01" Maximum="16" Increment="0.05" FormatString="0.##" Width="130" HorizontalAlignment="Left"/>
+    <TextBlock Grid.Row="4" Grid.Column="0" Text="Rotation °" Classes="ws-prop-label" VerticalAlignment="Center"/>
+    <NumericUpDown Grid.Row="4" Grid.Column="1" x:Name="NumRot" Increment="1" FormatString="0.#" Width="130" HorizontalAlignment="Left"/>
+    <TextBlock Grid.Row="5" Grid.Column="0" Text="Opacity" Classes="ws-prop-label" VerticalAlignment="Center"/>
+    <NumericUpDown Grid.Row="5" Grid.Column="1" x:Name="NumOp" Minimum="0" Maximum="1" Increment="0.05" FormatString="0.##" Width="130" HorizontalAlignment="Left"/>
+    <TextBlock Grid.Row="6" Grid.Column="0" Text="Pivot X" Classes="ws-prop-label" VerticalAlignment="Center"/>
+    <NumericUpDown Grid.Row="6" Grid.Column="1" x:Name="NumPx" Minimum="0" Maximum="1" Increment="0.05" FormatString="0.##" Width="130" HorizontalAlignment="Left"/>
+    <TextBlock Grid.Row="7" Grid.Column="0" Text="Pivot Y" Classes="ws-prop-label" VerticalAlignment="Center"/>
+    <NumericUpDown Grid.Row="7" Grid.Column="1" x:Name="NumPy" Minimum="0" Maximum="1" Increment="0.05" FormatString="0.##" Width="130" HorizontalAlignment="Left"/>
+    <TextBlock Grid.Row="8" Grid.Column="0" Text="Flip H" Classes="ws-prop-label" VerticalAlignment="Center"/>
+    <CheckBox Grid.Row="8" Grid.Column="1" x:Name="FlipHCheck"/>
+    <TextBlock Grid.Row="9" Grid.Column="0" Text="Flip V" Classes="ws-prop-label" VerticalAlignment="Center"/>
+    <CheckBox Grid.Row="9" Grid.Column="1" x:Name="FlipVCheck"/>
+  </Grid>
+</UserControl>

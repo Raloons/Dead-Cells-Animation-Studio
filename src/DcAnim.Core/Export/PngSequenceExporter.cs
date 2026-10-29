@@ -1,4 +1,5 @@
 using DcAnim.Core.Model;
+using DcAnim.Core.Sequence;
 
 namespace DcAnim.Core.Export;
 
@@ -18,7 +19,22 @@ public static class PngSequenceExporter
         IProgress<ExportProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        var (w, h) = ExportCanvas.Measure(frames);
+        var (w, h, centered) = ExportCanvas.CenteredFrames(frames);
+        return ExportRendered(new RenderedSequence(w, h, centered), outputDirectory, overwrite, progress, cancellationToken);
+    }
+
+    /// <summary>PNG export of pre-composed full-canvas frames (e.g. with transforms/FX).</summary>
+    public static IReadOnlyList<string> ExportRendered(
+        RenderedSequence rendered,
+        string outputDirectory,
+        bool overwrite = false,
+        IProgress<ExportProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var (w, h) = (rendered.Width, rendered.Height);
+        var frames = rendered.Frames;
+        if (w <= 0 || h <= 0 || frames.Count == 0)
+            throw new InvalidDataException("Cannot export an empty sequence.");
         Directory.CreateDirectory(outputDirectory);
         var existing = Directory.GetFiles(outputDirectory, "frame_*.png");
         if (existing.Length > 0 && !overwrite)
@@ -30,7 +46,7 @@ public static class PngSequenceExporter
         for (int i = 0; i < frames.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var rgba = ExportCanvas.ComposeCentered(frames[i], w, h);
+            byte[] rgba = frames[i];
             using var bmp = ExportCanvas.ToSkBitmap(rgba, w, h);
             using var img = SkiaSharp.SKImage.FromBitmap(bmp);
             using var data = img.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);

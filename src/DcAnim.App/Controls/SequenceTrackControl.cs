@@ -10,10 +10,10 @@ using DcAnim.Core.Sequence;
 namespace DcAnim.App.Controls;
 
 /// <summary>
-/// Single-track sequence lane: ordered clip blocks with thumbnails, selection,
-/// drag-reorder, drop-to-insert from the asset library, and a context menu.
-/// Neutral styling; geometry reuses <see cref="TimelineMath"/> so ruler,
-/// clips, playhead and the viewer lattice stay aligned.
+/// Multi-lane sequence track: animation clips, one effect lane, one audio lane
+/// (with waveform), keyframe diamonds on the selected item, playhead, and the
+/// shared frame lattice. Selection is neutral; only the hit concept (viewer
+/// filmstrip) keeps functional color — sequence markers are monochrome.
 /// </summary>
 public sealed class SequenceTrackControl : Control
 {
@@ -22,13 +22,51 @@ public sealed class SequenceTrackControl : Control
         string AnimationId,
         int StartFrame,
         int FrameCount,
-        IList<Bitmap>? Thumbs);
+        IList<Bitmap> Thumbs);
+
+    public sealed record FxBlock(
+        string EffectId,
+        string Name,
+        int StartFrame,
+        int FrameCount,
+        int Layer);
+
+    public sealed record AudioBlock(
+        string AudioId,
+        string Name,
+        double StartSeconds,
+        double DurationSeconds,
+        float[] Peaks,
+        bool Muted);
+
+    public sealed record KeyMarker(TransformProperty Property, int Frame, bool Selected);
 
     public static readonly StyledProperty<IList<ClipBlock>?> ClipsProperty =
         AvaloniaProperty.Register<SequenceTrackControl, IList<ClipBlock>?>(nameof(Clips));
 
     public static readonly StyledProperty<string?> SelectedClipIdProperty =
         AvaloniaProperty.Register<SequenceTrackControl, string?>(nameof(SelectedClipId));
+
+    public static readonly StyledProperty<IList<FxBlock>?> EffectsProperty =
+        AvaloniaProperty.Register<SequenceTrackControl, IList<FxBlock>?>(nameof(Effects));
+
+    public static readonly StyledProperty<string?> SelectedEffectIdProperty =
+        AvaloniaProperty.Register<SequenceTrackControl, string?>(nameof(SelectedEffectId));
+
+    public static readonly StyledProperty<IList<AudioBlock>?> AudioProperty =
+        AvaloniaProperty.Register<SequenceTrackControl, IList<AudioBlock>?>(nameof(Audio));
+
+    public static readonly StyledProperty<string?> SelectedAudioIdProperty =
+        AvaloniaProperty.Register<SequenceTrackControl, string?>(nameof(SelectedAudioId));
+
+    public static readonly StyledProperty<IList<KeyMarker>?> KeyframesProperty =
+        AvaloniaProperty.Register<SequenceTrackControl, IList<KeyMarker>?>(nameof(Keyframes));
+
+    public static readonly StyledProperty<KeyMarker?> SelectedKeyProperty =
+        AvaloniaProperty.Register<SequenceTrackControl, KeyMarker?>(nameof(SelectedKey));
+
+    public static readonly StyledProperty<bool> ShowEffectKeysProperty =
+        AvaloniaProperty.Register<SequenceTrackControl, bool>(nameof(ShowEffectKeys), true);
 
     public static readonly StyledProperty<int> CurrentFrameProperty =
         AvaloniaProperty.Register<SequenceTrackControl, int>(nameof(CurrentFrame), -1);
@@ -40,14 +78,26 @@ public sealed class SequenceTrackControl : Control
         AvaloniaProperty.Register<SequenceTrackControl, double>(nameof(Fps), 30.0);
 
     public const double RulerHeight = 26.0;
-    public const double LaneHeight = 64.0;
-    public const double LaneTop = RulerHeight + 4;
+    public const double ClipLaneHeight = 56.0;
+    public const double FxLaneHeight = 42.0;
+    public const double AudioLaneHeight = 46.0;
+    public const double LaneGap = 4.0;
+    public const double LaneTop = RulerHeight + LaneGap;
+    public double FxTop => LaneTop + ClipLaneHeight + LaneGap;
+    public double AudioTop => FxTop + FxLaneHeight + LaneGap;
+    public double TrackBottom => AudioTop + AudioLaneHeight;
     private const double OriginX = 4.0;
 
     private static readonly IBrush RulerBrush = new SolidColorBrush(Color.FromRgb(0x17, 0x17, 0x1B));
     private static readonly IBrush ClipBrush = new SolidColorBrush(Color.FromRgb(0x23, 0x23, 0x29));
     private static readonly IBrush SelectedBrush = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x3D));
     private static readonly IPen SelectedPen = new Pen(new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0xA5)), 1.5);
+    private static readonly IBrush FxBrush = new SolidColorBrush(Color.FromRgb(0x21, 0x22, 0x28));
+    private static readonly IBrush AudioBrush = new SolidColorBrush(Color.FromRgb(0x1F, 0x21, 0x26));
+    private static readonly IBrush MutedBrush = new SolidColorBrush(Color.FromRgb(0x1B, 0x1B, 0x1F));
+    private static readonly IBrush WaveBrush = new SolidColorBrush(Color.FromRgb(0x8E, 0x8E, 0x96));
+    private static readonly IBrush KeyBrush = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0xA5));
+    private static readonly IBrush KeySelectedBrush = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xEC));
     private static readonly IBrush MinorGridBrush = new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x27));
     private static readonly IBrush MajorGridBrush = new SolidColorBrush(Color.FromRgb(0x31, 0x31, 0x38));
     private static readonly IBrush LaneSeparatorBrush = new SolidColorBrush(Color.FromRgb(0x2C, 0x2C, 0x33));
@@ -59,51 +109,52 @@ public sealed class SequenceTrackControl : Control
 
     private Point? _pressPoint;
     private string? _dragClipId;
+    private string? _dragEffectId;
+    private string? _dragAudioId;
+    private (TransformProperty Prop, int Frame)? _dragKey;
+    private bool _dragKeyIsEffect;
     private bool _dragging;
-    private int _dropIndex = -1; // external library drop target, -1 = none
+    private int _dropIndex = -1; // library drop target, -1 = none
+    private double _dropX;        // internal-drag indicator position
 
     static SequenceTrackControl()
     {
         AffectsRender<SequenceTrackControl>(ClipsProperty, SelectedClipIdProperty,
-            CurrentFrameProperty, PixelsPerFrameProperty, FpsProperty);
+            EffectsProperty, SelectedEffectIdProperty, AudioProperty, SelectedAudioIdProperty,
+            KeyframesProperty, SelectedKeyProperty, CurrentFrameProperty,
+            PixelsPerFrameProperty, FpsProperty);
     }
 
     public event Action<string>? ClipSelected;
-    public event Action<string, int>? ClipMoved; // clip id, new clip index
-    public event Action<string, int>? LibraryDrop; // animation id, insert clip index
+    public event Action<string, int>? ClipMoved;
+    public event Action<string, int>? LibraryDrop;
     public event Action<string>? RemoveRequested;
     public event Action<string>? DuplicateRequested;
     public event Action<string, double>? SpeedRequested;
+    public event Action<string>? EffectSelected;
+    public event Action<string, int>? EffectMoved;
+    public event Action<string>? EffectRemoveRequested;
+    public event Action<string>? AudioSelected;
+    public event Action<string, double>? AudioMoved;
+    public event Action<string>? AudioRemoveRequested;
+    public event Action<TransformProperty, int, bool>? KeyframeSelected; // prop, frame, isEffect
+    public event Action<TransformProperty, int, int, bool>? KeyframeMoved; // prop, from, to, isEffect
+    public event Action? KeyframeDragStarted;
+    public event Action? KeyframeDragFinished;
 
-    public IList<ClipBlock>? Clips
-    {
-        get => GetValue(ClipsProperty);
-        set => SetValue(ClipsProperty, value);
-    }
+    public IList<ClipBlock>? Clips { get => GetValue(ClipsProperty); set => SetValue(ClipsProperty, value); }
+    public string? SelectedClipId { get => GetValue(SelectedClipIdProperty); set => SetValue(SelectedClipIdProperty, value); }
+    public IList<FxBlock>? Effects { get => GetValue(EffectsProperty); set => SetValue(EffectsProperty, value); }
+    public string? SelectedEffectId { get => GetValue(SelectedEffectIdProperty); set => SetValue(SelectedEffectIdProperty, value); }
+    public IList<AudioBlock>? Audio { get => GetValue(AudioProperty); set => SetValue(AudioProperty, value); }
+    public string? SelectedAudioId { get => GetValue(SelectedAudioIdProperty); set => SetValue(SelectedAudioIdProperty, value); }
+    public IList<KeyMarker>? Keyframes { get => GetValue(KeyframesProperty); set => SetValue(KeyframesProperty, value); }
+    public KeyMarker? SelectedKey { get => GetValue(SelectedKeyProperty); set => SetValue(SelectedKeyProperty, value); }
+    public bool ShowEffectKeys { get => GetValue(ShowEffectKeysProperty); set => SetValue(ShowEffectKeysProperty, value); }
 
-    public string? SelectedClipId
-    {
-        get => GetValue(SelectedClipIdProperty);
-        set => SetValue(SelectedClipIdProperty, value);
-    }
-
-    public int CurrentFrame
-    {
-        get => GetValue(CurrentFrameProperty);
-        set => SetValue(CurrentFrameProperty, value);
-    }
-
-    public double PixelsPerFrame
-    {
-        get => GetValue(PixelsPerFrameProperty);
-        set => SetValue(PixelsPerFrameProperty, Math.Clamp(value, 8.0, 128.0));
-    }
-
-    public double Fps
-    {
-        get => GetValue(FpsProperty);
-        set => SetValue(FpsProperty, value > 0 ? value : 30.0);
-    }
+    public int CurrentFrame { get => GetValue(CurrentFrameProperty); set => SetValue(CurrentFrameProperty, value); }
+    public double PixelsPerFrame { get => GetValue(PixelsPerFrameProperty); set => SetValue(PixelsPerFrameProperty, Math.Clamp(value, 8.0, 128.0)); }
+    public double Fps { get => GetValue(FpsProperty); set => SetValue(FpsProperty, value > 0 ? value : 30.0); }
 
     public int TotalFrames => Clips?.Sum(c => c.FrameCount) ?? 0;
     public double TrackWidth => Math.Max(TimelineMath.TrackWidth(TotalFrames, PixelsPerFrame) + 8, 0);
@@ -117,6 +168,8 @@ public sealed class SequenceTrackControl : Control
         AddHandler(DragDrop.DropEvent, OnDrop);
         BuildContextMenu();
     }
+
+    private double FrameX(int frame) => OriginX + TimelineMath.XForFrame(frame, PixelsPerFrame);
 
     public int InsertIndexAt(double x)
     {
@@ -136,40 +189,41 @@ public sealed class SequenceTrackControl : Control
         if (insertIndex >= clips.Count)
         {
             var last = clips[^1];
-            return OriginX + TimelineMath.XForFrame(last.StartFrame + last.FrameCount, PixelsPerFrame);
+            return FrameX(last.StartFrame + last.FrameCount);
         }
-        return OriginX + TimelineMath.XForFrame(clips[insertIndex].StartFrame, PixelsPerFrame);
+        return FrameX(clips[insertIndex].StartFrame);
     }
 
     public override void Render(DrawingContext context)
     {
         var clips = Clips;
         double ppf = PixelsPerFrame;
+        int total = TotalFrames;
         double fullWidth = Math.Max(Bounds.Width, TrackWidth);
         context.FillRectangle(RulerBrush, new Rect(0, 0, fullWidth, RulerHeight));
 
-        int total = TotalFrames;
-        if (clips is null || clips.Count == 0 || total <= 0)
+        double laneBottom = AudioTop + AudioLaneHeight;
+        if ((clips is null || clips.Count == 0) && total <= 0)
         {
             var empty = new FormattedText("Drop animations here to build a sequence",
                 System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
                 Typeface.Default, 12, TextBrush);
-            context.DrawText(empty, new Point(8, LaneTop + (LaneHeight - empty.Height) / 2));
+            context.DrawText(empty, new Point(8, LaneTop + (ClipLaneHeight - empty.Height) / 2));
             return;
         }
 
-        // Lattice.
+        // Lattice across the full workspace.
         var (minors, majors) = TimelineMath.GridLines(total, ppf, fullWidth, OriginX, 88.0);
         foreach (double gx in minors)
-            context.FillRectangle(MinorGridBrush, new Rect(gx - 0.5, LaneTop, 1, LaneHeight));
+            context.FillRectangle(MinorGridBrush, new Rect(gx - 0.5, LaneTop, 1, laneBottom - LaneTop));
         foreach (double gx in majors)
-            context.FillRectangle(MajorGridBrush, new Rect(gx - 0.5, LaneTop, 1, LaneHeight));
-        context.FillRectangle(LaneSeparatorBrush, new Rect(0, LaneTop, fullWidth, 1));
-        context.FillRectangle(LaneSeparatorBrush, new Rect(0, LaneTop + LaneHeight - 1, fullWidth, 1));
+            context.FillRectangle(MajorGridBrush, new Rect(gx - 0.5, LaneTop, 1, laneBottom - LaneTop));
+        foreach (double ly in new[] { LaneTop, FxTop, AudioTop, laneBottom })
+            context.FillRectangle(LaneSeparatorBrush, new Rect(0, ly, fullWidth, 1));
 
         // Ruler.
-        int every = TimelineMath.LabelEvery(total, ppf, 88.0);
-        for (int i = 0; i <= total; i += 1)
+        int every = TimelineMath.LabelEvery(Math.Max(1, total), ppf, 88.0);
+        for (int i = 0; i <= total; i++)
         {
             double x = OriginX + TimelineMath.XForFrame(i, ppf);
             if (x > fullWidth)
@@ -187,58 +241,122 @@ public sealed class SequenceTrackControl : Control
         }
 
         // Clip blocks.
-        foreach (var c in clips)
+        if (clips is not null)
         {
-            double x = OriginX + TimelineMath.XForFrame(c.StartFrame, ppf);
-            double w = c.FrameCount * ppf;
-            bool selected = c.ClipId == SelectedClipId;
-            var rect = new Rect(x + 1, LaneTop + 1, Math.Max(1, w - 2), LaneHeight - 2);
-            context.FillRectangle(selected ? SelectedBrush : ClipBrush, rect);
-            if (selected)
-                context.DrawRectangle(SelectedPen, new Rect(x, LaneTop, w, LaneHeight));
-
-            // Thumbnails: first, middle, last.
-            if (c.Thumbs is { Count: > 0 })
+            foreach (var c in clips)
             {
-                var picks = new[] { 0, c.Thumbs.Count / 2, c.Thumbs.Count - 1 }.Distinct().ToList();
-                double slotW = rect.Width / picks.Count;
-                for (int p = 0; p < picks.Count; p++)
+                double x = FrameX(c.StartFrame);
+                double w = c.FrameCount * ppf;
+                bool selected = c.ClipId == SelectedClipId;
+                var rect = new Rect(x + 1, LaneTop + 1, Math.Max(1, w - 2), ClipLaneHeight - 2);
+                context.FillRectangle(selected ? SelectedBrush : ClipBrush, rect);
+                if (selected)
+                    context.DrawRectangle(SelectedPen, new Rect(x, LaneTop, w, ClipLaneHeight));
+                if (c.Thumbs is { Count: > 0 })
                 {
-                    var thumb = c.Thumbs[picks[p]];
-                    double tw = Math.Min(slotW - 6, rect.Height - 20);
-                    if (tw <= 2)
-                        continue;
-                    var dest = new Rect(rect.X + p * slotW + (slotW - tw) / 2, rect.Center.Y - tw / 2 + 6, tw, tw);
-                    context.DrawImage(thumb, new Rect(0, 0, thumb.PixelSize.Width, thumb.PixelSize.Height), dest);
+                    var picks = new[] { 0, c.Thumbs.Count / 2, c.Thumbs.Count - 1 }.Distinct().ToList();
+                    double slotW = rect.Width / picks.Count;
+                    for (int p = 0; p < picks.Count; p++)
+                    {
+                        var thumb = c.Thumbs[picks[p]];
+                        double tw = Math.Min(slotW - 6, rect.Height - 22);
+                        if (tw <= 2)
+                            continue;
+                        var dest = new Rect(rect.X + p * slotW + (slotW - tw) / 2, rect.Center.Y - tw / 2 + 6, tw, tw);
+                        context.DrawImage(thumb, new Rect(0, 0, thumb.PixelSize.Width, thumb.PixelSize.Height), dest);
+                    }
                 }
+                DrawTrimmed(context, $"{c.AnimationId} · {c.FrameCount}f", x + 4, LaneTop + 3, Math.Max(0, w - 6));
             }
+        }
 
-            var label = $"{c.AnimationId} · {c.FrameCount}f";
-            double maxText = Math.Max(0, w - 6);
-            if (maxText > 20)
+        // Effect lane.
+        if (Effects is { Count: > 0 })
+        {
+            foreach (var e in Effects)
             {
-                // Approximate trim to the block width (monospace estimate).
-                int maxChars = Math.Max(4, (int)(maxText / 6));
-                string s = label.Length > maxChars ? label[..Math.Max(0, maxChars - 1)] + "…" : label;
-                var name = new FormattedText(s,
-                    System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
-                    Typeface.Default, 10, LabelBrush);
-                context.DrawText(name, new Point(x + 4, LaneTop + 3));
+                double x = FrameX(e.StartFrame);
+                double w = e.FrameCount * ppf;
+                bool selected = e.EffectId == SelectedEffectId;
+                var rect = new Rect(x + 1, FxTop + 1, Math.Max(1, w - 2), FxLaneHeight - 2);
+                context.FillRectangle(selected ? SelectedBrush : FxBrush, rect);
+                if (selected)
+                    context.DrawRectangle(SelectedPen, new Rect(x, FxTop, w, FxLaneHeight));
+                DrawTrimmed(context, e.Name, x + 4, FxTop + 3, Math.Max(0, w - 6));
+            }
+        }
+
+        // Audio lane with waveform.
+        if (Audio is { Count: > 0 })
+        {
+            foreach (var a in Audio)
+            {
+                int s0 = (int)Math.Round(a.StartSeconds * Fps);
+                int n = Math.Max(1, (int)Math.Round(a.DurationSeconds * Fps));
+                double x = FrameX(s0);
+                double w = n * ppf;
+                bool selected = a.AudioId == SelectedAudioId;
+                var rect = new Rect(x + 1, AudioTop + 1, Math.Max(1, w - 2), AudioLaneHeight - 2);
+                context.FillRectangle(a.Muted ? MutedBrush : AudioBrush, rect);
+                if (selected)
+                    context.DrawRectangle(SelectedPen, new Rect(x, AudioTop, w, AudioLaneHeight));
+                if (a.Peaks.Length > 0 && w > 8)
+                {
+                    double midY = AudioTop + AudioLaneHeight / 2;
+                    double amp = (AudioLaneHeight - 12) / 2;
+                    int cols = Math.Max(1, (int)(w - 4));
+                    for (int px = 0; px < cols; px++)
+                    {
+                        int b = px * a.Peaks.Length / cols;
+                        float v = a.Peaks[Math.Min(b, a.Peaks.Length - 1)];
+                        if (v <= 0.01f)
+                            continue;
+                        double bh = Math.Max(1, v * amp);
+                        context.FillRectangle(WaveBrush, new Rect(x + 2 + px, midY - bh / 2, 1, bh));
+                    }
+                }
+                DrawTrimmed(context, a.Muted ? $"{a.Name} (muted)" : a.Name, x + 4, AudioTop + 3, Math.Max(0, w - 6));
+            }
+        }
+
+        // Keyframe diamonds on the selected item's lane.
+        if (Keyframes is { Count: > 0 })
+        {
+            bool fx = ShowEffectKeys;
+            double anchorStart = fx ? FxAnchorStart() : ClipAnchorStart();
+            if (anchorStart >= 0)
+            {
+                double laneY = fx ? FxTop : LaneTop;
+                foreach (var k in Keyframes)
+                {
+                    double x = FrameX((int)anchorStart + k.Frame);
+                    bool sel = SelectedKey is { } s && s.Property == k.Property && s.Frame == k.Frame;
+                    var diamond = new StreamGeometry();
+                    using (var ctx = diamond.Open())
+                    {
+                        ctx.BeginFigure(new Point(x, laneY + 8), true);
+                        ctx.LineTo(new Point(x + 4, laneY + 12));
+                        ctx.LineTo(new Point(x, laneY + 16));
+                        ctx.LineTo(new Point(x - 4, laneY + 12));
+                        ctx.EndFigure(true);
+                    }
+                    context.DrawGeometry(sel ? KeySelectedBrush : KeyBrush, null, diamond);
+                }
             }
         }
 
         // Drop-insert indicator.
-        if (_dropIndex >= 0)
+        if (_dropIndex >= 0 || _dragging)
         {
-            double bx = BoundaryX(_dropIndex);
-            context.DrawLine(InsertPen, new Point(bx, 2), new Point(bx, LaneTop + LaneHeight));
+            double bx = _dropIndex >= 0 ? BoundaryX(_dropIndex) : _dropX;
+            context.DrawLine(InsertPen, new Point(bx, 2), new Point(bx, laneBottom));
         }
 
         // Playhead.
-        if (CurrentFrame >= 0 && CurrentFrame < total)
+        if (CurrentFrame >= 0 && CurrentFrame < Math.Max(1, total))
         {
             double x = OriginX + TimelineMath.XForFrame(CurrentFrame, ppf) + ppf / 2;
-            context.DrawLine(PlayheadPen, new Point(x, 2), new Point(x, LaneTop + LaneHeight));
+            context.DrawLine(PlayheadPen, new Point(x, 2), new Point(x, laneBottom));
             var cap = new StreamGeometry();
             using (var ctx = cap.Open())
             {
@@ -251,31 +369,135 @@ public sealed class SequenceTrackControl : Control
         }
     }
 
+    private double ClipAnchorStart()
+    {
+        var c = Clips?.FirstOrDefault(c => c.ClipId == SelectedClipId);
+        return c is null ? -1 : c.StartFrame;
+    }
+
+    private double FxAnchorStart()
+    {
+        var e = Effects?.FirstOrDefault(e => e.EffectId == SelectedEffectId);
+        return e is null ? -1 : e.StartFrame;
+    }
+
+    private void DrawTrimmed(DrawingContext context, string text, double x, double y, double maxWidth)
+    {
+        if (maxWidth <= 20)
+            return;
+        int maxChars = Math.Max(4, (int)(maxWidth / 6));
+        string s = text.Length > maxChars ? text[..Math.Max(0, maxChars - 1)] + "…" : text;
+        var label = new FormattedText(s,
+            System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+            Typeface.Default, 10, LabelBrush);
+        context.DrawText(label, new Point(x, y));
+    }
+
+    private enum HitKind { None, Key, Clip, Effect, Audio }
+
+    private (HitKind Kind, string? Id, TransformProperty Prop, int Frame) HitTest(Point pos)
+    {
+        double x = pos.X, y = pos.Y;
+        // Keyframe diamonds first (generous 7px radius).
+        if (Keyframes is { Count: > 0 })
+        {
+            bool fx = ShowEffectKeys;
+            double anchor = fx ? FxAnchorStart() : ClipAnchorStart();
+            if (anchor >= 0)
+            {
+                double laneY = (fx ? FxTop : LaneTop) + 12;
+                foreach (var k in Keyframes)
+                {
+                    double kx = FrameX((int)anchor + k.Frame);
+                    if (Math.Abs(x - kx) <= 7 && Math.Abs(y - laneY) <= 9)
+                        return (HitKind.Key, null, k.Property, k.Frame);
+                }
+            }
+        }
+        // Lanes.
+        if (y >= AudioTop && Audio is not null)
+        {
+            foreach (var a in Audio)
+            {
+                int s0 = (int)Math.Round(a.StartSeconds * Fps);
+                int n = Math.Max(1, (int)Math.Round(a.DurationSeconds * Fps));
+                if (x >= FrameX(s0) && x < FrameX(s0 + n))
+                    return (HitKind.Audio, a.AudioId, default, 0);
+            }
+            return (HitKind.None, null, default, 0);
+        }
+        if (y >= FxTop && Effects is not null)
+        {
+            foreach (var e in Effects)
+            {
+                if (x >= FrameX(e.StartFrame) && x < FrameX(e.StartFrame + e.FrameCount))
+                    return (HitKind.Effect, e.EffectId, default, 0);
+            }
+            return (HitKind.None, null, default, 0);
+        }
+        if (y >= LaneTop && Clips is not null)
+        {
+            foreach (var c in Clips)
+            {
+                if (x >= FrameX(c.StartFrame) && x < FrameX(c.StartFrame + c.FrameCount))
+                    return (HitKind.Clip, c.ClipId, default, 0);
+            }
+        }
+        return (HitKind.None, null, default, 0);
+    }
+
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
-        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
-        {
-            _pressPoint = e.GetPosition(this);
-            _dragClipId = ClipAt(_pressPoint.Value.X);
-            _dragging = false;
-            e.Pointer.Capture(this);
-            e.Handled = true;
-        }
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            return;
+        _pressPoint = e.GetPosition(this);
+        var hit = HitTest(_pressPoint.Value);
+        _dragClipId = hit.Kind == HitKind.Clip ? hit.Id : null;
+        _dragEffectId = hit.Kind == HitKind.Effect ? hit.Id : null;
+        _dragAudioId = hit.Kind == HitKind.Audio ? hit.Id : null;
+        _dragKey = hit.Kind == HitKind.Key ? (hit.Prop, hit.Frame) : null;
+        _dragKeyIsEffect = ShowEffectKeys;
+        _dragging = false;
+        if (hit.Kind == HitKind.Key)
+            KeyframeDragStarted?.Invoke();
+        e.Pointer.Capture(this);
+        e.Handled = true;
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        if (_pressPoint is null || _dragClipId is null)
+        if (_pressPoint is null)
             return;
         var pos = e.GetPosition(this);
-        if (!_dragging && _pressPoint is { } start &&
-            (pos.X - start.X) * (pos.X - start.X) + (pos.Y - start.Y) * (pos.Y - start.Y) > 16)
+        var dx = pos.X - _pressPoint.Value.X;
+        var dy = pos.Y - _pressPoint.Value.Y;
+        if (!_dragging && dx * dx + dy * dy > 16)
             _dragging = true;
-        if (_dragging)
+        if (!_dragging)
+            return;
+
+        if (_dragKey is { } key)
+        {
+            // Move keyframe: snap to frame, coalesced by the host.
+            int to = (int)Math.Round((pos.X - OriginX) / PixelsPerFrame) -
+                (int)(_dragKeyIsEffect ? FxAnchorStart() : ClipAnchorStart());
+            KeyframeMoved?.Invoke(key.Prop, key.Frame, Math.Max(0, to), _dragKeyIsEffect);
+            _dragKey = (key.Prop, Math.Max(0, to));
+            return;
+        }
+        if (_dragClipId is not null)
         {
             _dropIndex = InsertIndexAt(pos.X);
+            _dropX = BoundaryX(_dropIndex);
+            InvalidateVisual();
+            return;
+        }
+        if (_dragEffectId is not null || _dragAudioId is not null)
+        {
+            _dropIndex = -1;
+            _dropX = pos.X;
             InvalidateVisual();
         }
     }
@@ -286,41 +508,50 @@ public sealed class SequenceTrackControl : Control
         if (_pressPoint is null)
             return;
         var pos = e.GetPosition(this);
-        if (_dragging && _dragClipId is not null && _dropIndex >= 0)
+        if (_dragging)
         {
-            // Convert boundary index to clip index accounting for the dragged clip.
-            var clips = Clips ?? new List<ClipBlock>();
-            int from = clips.ToList().FindIndex(c => c.ClipId == _dragClipId);
-            int to = _dropIndex;
-            if (from >= 0 && to > from)
-                to--;
-            if (from != to)
-                ClipMoved?.Invoke(_dragClipId, to);
+            if (_dragKey is not null)
+            {
+                KeyframeDragFinished?.Invoke();
+            }
+            else if (_dragClipId is not null && _dropIndex >= 0)
+            {
+                var clips = Clips?.ToList() ?? new List<ClipBlock>();
+                int from = clips.FindIndex(c => c.ClipId == _dragClipId);
+                int to = _dropIndex;
+                if (from >= 0 && to > from)
+                    to--;
+                if (from != to && from >= 0)
+                    ClipMoved?.Invoke(_dragClipId, to);
+            }
+            else if (_dragEffectId is not null)
+            {
+                int start = Math.Max(0, (int)Math.Round((pos.X - OriginX) / PixelsPerFrame));
+                EffectMoved?.Invoke(_dragEffectId, start);
+            }
+            else if (_dragAudioId is not null)
+            {
+                int start = Math.Max(0, (int)Math.Round((pos.X - OriginX) / PixelsPerFrame));
+                AudioMoved?.Invoke(_dragAudioId, start / Fps);
+            }
         }
-        else if (_dragClipId is not null)
+        else
         {
-            ClipSelected?.Invoke(_dragClipId);
+            var hit = HitTest(pos);
+            switch (hit.Kind)
+            {
+                case HitKind.Clip when hit.Id is { } id: ClipSelected?.Invoke(id); break;
+                case HitKind.Effect when hit.Id is { } id: EffectSelected?.Invoke(id); break;
+                case HitKind.Audio when hit.Id is { } id: AudioSelected?.Invoke(id); break;
+                case HitKind.Key: KeyframeSelected?.Invoke(hit.Prop, hit.Frame, ShowEffectKeys); break;
+            }
         }
         _pressPoint = null;
-        _dragClipId = null;
+        _dragClipId = _dragEffectId = _dragAudioId = null;
+        _dragKey = null;
         _dragging = false;
         _dropIndex = -1;
         InvalidateVisual();
-    }
-
-    private string? ClipAt(double x)
-    {
-        var clips = Clips;
-        if (clips is null)
-            return null;
-        double lx = x - OriginX;
-        foreach (var c in clips)
-        {
-            double sx = TimelineMath.XForFrame(c.StartFrame, PixelsPerFrame);
-            if (lx >= sx && lx < sx + c.FrameCount * PixelsPerFrame)
-                return c.ClipId;
-        }
-        return null;
     }
 
     private void OnDragOver(object? sender, DragEventArgs e)
@@ -363,10 +594,17 @@ public sealed class SequenceTrackControl : Control
             item.Click += (_, _) => { if (SelectedClipId is { } id) SpeedRequested?.Invoke(id, speed); };
             speedMenu.Items.Add(item);
         }
+        var removeFx = new MenuItem { Header = "Remove effect" };
+        removeFx.Click += (_, _) => { if (SelectedEffectId is { } id) EffectRemoveRequested?.Invoke(id); };
+        var removeAu = new MenuItem { Header = "Remove audio" };
+        removeAu.Click += (_, _) => { if (SelectedAudioId is { } id) AudioRemoveRequested?.Invoke(id); };
         menu.Items.Add(duplicate);
         menu.Items.Add(remove);
         menu.Items.Add(new Separator());
         menu.Items.Add(speedMenu);
+        menu.Items.Add(new Separator());
+        menu.Items.Add(removeFx);
+        menu.Items.Add(removeAu);
         ContextMenu = menu;
     }
 }

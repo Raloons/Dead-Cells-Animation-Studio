@@ -202,13 +202,15 @@ public sealed class SequenceExportTests
     {
         using var fx = new Fixture();
         var (clip, resolved) = SequenceComposer.Compose(KatanaLike(), fx.Loader);
+        var (w, h, centered) = ExportCanvas.CenteredFrames(clip.Frames);
+        var rendered = new RenderedSequence(w, h, centered);
         string dir = Path.Combine(Path.GetTempPath(), $"sheet-{Guid.NewGuid():N}");
         string img = Path.Combine(dir, "sheet.png");
         string meta = Path.Combine(dir, "sheet.json");
 
         try
         {
-            var info = SpriteSheetExporter.Export(clip.Frames, resolved, 30, img, meta,
+            var info = SpriteSheetExporter.Export(rendered, resolved, 30, img, meta,
                 columns: 4, padding: 2);
 
             // 7 frames, 4 cols -> 2 rows; cells 32 + 2px padding.

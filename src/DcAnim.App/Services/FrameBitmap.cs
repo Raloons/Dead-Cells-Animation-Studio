@@ -74,6 +74,18 @@ public static class FrameBitmap
         }
     }
 
+    /// <summary>Bitmap from straight-alpha RGBA bytes (e.g. a composed sequence frame).</summary>
+    public static WriteableBitmap FromRgba(byte[] rgba, int width, int height)
+    {
+        var bitmap = new WriteableBitmap(
+            new PixelSize(width, height),
+            new Vector(96, 96),
+            PixelFormat.Bgra8888,
+            AlphaFormat.Premul);
+        WritePremultiplied(bitmap, rgba);
+        return bitmap;
+    }
+
     private static void WritePremultiplied(WriteableBitmap bitmap, byte[] rgba)
     {
         using var locked = bitmap.Lock();

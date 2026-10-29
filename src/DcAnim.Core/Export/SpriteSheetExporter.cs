@@ -40,8 +40,12 @@ public static class SpriteSheetExporter
         int StartFrame,
         int FrameCount);
 
+    /// <summary>
+    /// Sprite-sheet export of pre-composed full-canvas frames. Metadata maps
+    /// every cell back to its source animation, sequence index and clip.
+    /// </summary>
     public static SheetInfo Export(
-        IReadOnlyList<ClipFrame> frames,
+        RenderedSequence rendered,
         IReadOnlyList<ResolvedClip> resolved,
         double fps,
         string imagePath,
@@ -58,7 +62,10 @@ public static class SpriteSheetExporter
             throw new ArgumentOutOfRangeException(nameof(columns));
         if (padding < 0)
             throw new ArgumentOutOfRangeException(nameof(padding));
-        var (cellW, cellH) = ExportCanvas.Measure(frames);
+        var frames = rendered.Frames;
+        int cellW = rendered.Width, cellH = rendered.Height;
+        if (cellW <= 0 || cellH <= 0 || frames.Count == 0)
+            throw new InvalidDataException("Cannot export an empty sequence.");
         if (File.Exists(imagePath) && !overwrite)
             throw new IOException($"'{imagePath}' already exists. Enable overwrite or choose another file.");
 
@@ -89,8 +96,7 @@ public static class SpriteSheetExporter
             int cx = i % cols, cy = i / cols;
             int x = padding + cx * (cellW + padding);
             int y = padding + cy * (cellH + padding);
-            var rgba = ExportCanvas.ComposeCentered(frames[i], cellW, cellH);
-            using var bmp = ExportCanvas.ToSkBitmap(rgba, cellW, cellH);
+            using var bmp = ExportCanvas.ToSkBitmap(frames[i], cellW, cellH);
             surface.Canvas.DrawBitmap(bmp, x, y);
 
             int clipIndex = clipOfGlobal[i];

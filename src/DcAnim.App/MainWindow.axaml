@@ -22,6 +22,10 @@
               <MenuItem x:Name="OpenProjectItem" Header="Open project…" InputGesture="Ctrl+O"/>
               <MenuItem x:Name="SaveItem" Header="Save project" InputGesture="Ctrl+S"/>
               <MenuItem x:Name="SaveAsItem" Header="Save project as…" InputGesture="Ctrl+Shift+S"/>
+              <Separator/>
+              <MenuItem x:Name="AddEffectItem" Header="Add effect image…"/>
+              <MenuItem x:Name="AddAudioItem" Header="Add audio (WAV)…"/>
+              <Separator/>
               <MenuItem Header="Export sequence">
                 <MenuItem x:Name="ExportPngItem" Header="PNG frame sequence…"/>
                 <MenuItem x:Name="ExportGifItem" Header="Animated GIF…"/>
@@ -33,6 +37,9 @@
               <MenuItem x:Name="ExitItem" Header="Exit" InputGesture="Alt+F4"/>
             </MenuItem>
             <MenuItem Header="_Edit">
+              <MenuItem x:Name="UndoItem" Header="Undo" InputGesture="Ctrl+Z"/>
+              <MenuItem x:Name="RedoItem" Header="Redo" InputGesture="Ctrl+Y"/>
+              <Separator/>
               <MenuItem x:Name="PlayPauseItem" Header="Play / pause" InputGesture="Space"/>
               <MenuItem x:Name="PrevFrameItem" Header="Previous frame" InputGesture="Left"/>
               <MenuItem x:Name="NextFrameItem" Header="Next frame" InputGesture="Right"/>

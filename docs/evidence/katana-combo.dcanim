@@ -1,28 +1,185 @@
 {
   "format": "dcanim",
-  "version": 1,
+  "version": 2,
   "name": "Katana Combo",
   "fps": 30,
   "clips": [
     {
-      "id": "74a471f70c51429080e6b3c41112ecb2",
+      "id": "b53f085a66ab4079b42c7b2f1ccef81c",
       "animation": "AtkKatanaA",
-      "speed": 1
+      "speed": 1,
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1,
+        "scaleY": 1,
+        "rotationDegrees": 0,
+        "opacity": 1,
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "flipH": false,
+        "flipV": false
+      },
+      "keyframes": []
     },
     {
-      "id": "03fe0334e0b64fb481bbab1b8ce6f531",
+      "id": "648f1f8fbc7e46a2b2bb80fca63f1aff",
       "animation": "AtkKatanaB2",
-      "speed": 1
+      "speed": 1,
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1,
+        "scaleY": 1,
+        "rotationDegrees": 0,
+        "opacity": 1,
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "flipH": false,
+        "flipV": false
+      },
+      "keyframes": [
+        {
+          "property": "X",
+          "frame": 0,
+          "value": 0,
+          "interpolation": "Hold"
+        },
+        {
+          "property": "X",
+          "frame": 5,
+          "value": 12,
+          "interpolation": "Hold"
+        },
+        {
+          "property": "ScaleX",
+          "frame": 0,
+          "value": 1,
+          "interpolation": "Hold"
+        },
+        {
+          "property": "ScaleX",
+          "frame": 5,
+          "value": 1.5,
+          "interpolation": "Linear"
+        },
+        {
+          "property": "ScaleX",
+          "frame": 10,
+          "value": 1,
+          "interpolation": "Linear"
+        }
+      ]
     },
     {
-      "id": "75cd898f1c17470fa07d0187fba81ae5",
+      "id": "e49a9646ccfd40158802fc0177d0c04e",
       "animation": "AtkKatanaB3",
-      "speed": 0.5
+      "speed": 0.5,
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1,
+        "scaleY": 1,
+        "rotationDegrees": 0,
+        "opacity": 1,
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "flipH": false,
+        "flipV": false
+      },
+      "keyframes": []
     },
     {
-      "id": "a1282625cff747e39c6b4b4a46550f42",
+      "id": "1414f58bb0814ad3b61c62e7fa5386fc",
       "animation": "AtkKatanaB4",
-      "speed": 1.25
+      "speed": 1.25,
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1,
+        "scaleY": 1,
+        "rotationDegrees": 0,
+        "opacity": 1,
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "flipH": false,
+        "flipV": false
+      },
+      "keyframes": []
     }
-  ]
+  ],
+  "effects": [
+    {
+      "id": "98d5debe514f4bc8942e2901acc03b84",
+      "name": "evidence-shockwave",
+      "image": "as-m4-shockwave.png",
+      "startFrame": 26,
+      "durationFrames": 12,
+      "layer": 0,
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1,
+        "scaleY": 1,
+        "rotationDegrees": 0,
+        "opacity": 1,
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "flipH": false,
+        "flipV": false
+      },
+      "keyframes": [
+        {
+          "property": "ScaleX",
+          "frame": 0,
+          "value": 0.2,
+          "interpolation": "Hold"
+        },
+        {
+          "property": "ScaleX",
+          "frame": 11,
+          "value": 1.6,
+          "interpolation": "Linear"
+        },
+        {
+          "property": "ScaleY",
+          "frame": 0,
+          "value": 0.2,
+          "interpolation": "Hold"
+        },
+        {
+          "property": "ScaleY",
+          "frame": 11,
+          "value": 1.6,
+          "interpolation": "Linear"
+        },
+        {
+          "property": "Opacity",
+          "frame": 0,
+          "value": 1,
+          "interpolation": "Hold"
+        },
+        {
+          "property": "Opacity",
+          "frame": 11,
+          "value": 0,
+          "interpolation": "Linear"
+        }
+      ]
+    }
+  ],
+  "audio": [
+    {
+      "id": "73e0d8adada4440ab7fb00703b097286",
+      "name": "evidence-tone",
+      "file": "as-m4-tone.wav",
+      "startSeconds": 0.5,
+      "trimStartSeconds": 0,
+      "durationSeconds": null,
+      "volume": 1,
+      "muted": false
+    }
+  ],
+  "canvasWidth": 0,
+  "canvasHeight": 0
 }

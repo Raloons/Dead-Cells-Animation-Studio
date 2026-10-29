@@ -17,6 +17,7 @@ redistributed here.
 | Avalonia, Avalonia.Desktop, Avalonia.Themes.Fluent (11.3.0) | Desktop UI framework + Fluent theme | MIT — https://github.com/AvaloniaUI/Avalonia |
 | SkiaSharp (3.119.1) | PNG decode + frame composition in `DcAnim.Core` | MIT — https://github.com/mono/SkiaSharp |
 | SixLabors.ImageSharp (3.1.8) | Animated GIF encode/decode in `DcAnim.Core` | Apache-2.0 — https://github.com/SixLabors/ImageSharp |
+| NAudio (2.2.1) | WAV preview playback + waveform peaks in `DcAnim.App` | MIT — https://github.com/naudio/NAudio |
 | xunit.v3 + xunit.runner.visualstudio + Microsoft.NET.Test.Sdk | Test framework (dev only) | Apache-2.0 — https://github.com/xunit/xunit |
 | coverlet.collector | Code coverage (dev only) | MIT |
 

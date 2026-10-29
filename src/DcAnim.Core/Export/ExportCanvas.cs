@@ -30,6 +30,16 @@ public static class ExportCanvas
     public static (int X, int Y) CenterOffset(ClipFrame frame, int canvasWidth, int canvasHeight) =>
         ((canvasWidth - frame.Width) / 2, (canvasHeight - frame.Height) / 2);
 
+    /// <summary>Compose every frame centered on the shared canvas.</summary>
+    public static (int Width, int Height, List<byte[]> Frames) CenteredFrames(IReadOnlyList<ClipFrame> frames)
+    {
+        var (w, h) = Measure(frames);
+        var list = new List<byte[]>(frames.Count);
+        foreach (var f in frames)
+            list.Add(ComposeCentered(f, w, h));
+        return (w, h, list);
+    }
+
     /// <summary>Composes a frame centered on a transparent canvas (RGBA bytes).</summary>
     public static byte[] ComposeCentered(ClipFrame frame, int canvasWidth, int canvasHeight)
     {

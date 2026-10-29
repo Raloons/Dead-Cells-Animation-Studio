@@ -1,4 +1,5 @@
 using DcAnim.Core.Model;
+using DcAnim.Core.Sequence;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
@@ -39,9 +40,26 @@ public static class GifExporter
         IProgress<ExportProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        var (w, h, centered) = ExportCanvas.CenteredFrames(frames);
+        return ExportRendered(new RenderedSequence(w, h, centered), fps, outputPath, loop, overwrite, progress, cancellationToken);
+    }
+
+    /// <summary>GIF export of pre-composed full-canvas frames (e.g. with transforms/FX).</summary>
+    public static GifExportInfo ExportRendered(
+        RenderedSequence rendered,
+        double fps,
+        string outputPath,
+        bool loop = true,
+        bool overwrite = false,
+        IProgress<ExportProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
         if (fps <= 0 || double.IsNaN(fps) || double.IsInfinity(fps))
             throw new ArgumentOutOfRangeException(nameof(fps));
-        var (w, h) = ExportCanvas.Measure(frames);
+        if (rendered.Width <= 0 || rendered.Height <= 0 || rendered.Frames.Count == 0)
+            throw new InvalidDataException("Cannot export an empty sequence.");
+        var (w, h) = (rendered.Width, rendered.Height);
+        var frames = rendered.Frames;
         if (File.Exists(outputPath) && !overwrite)
             throw new IOException($"'{outputPath}' already exists. Enable overwrite or choose another file.");
 
@@ -56,7 +74,7 @@ public static class GifExporter
             for (int i = 0; i < frames.Count; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var rgba = ExportCanvas.ComposeCentered(frames[i], w, h);
+                byte[] rgba = frames[i];
                 using var img = Image.LoadPixelData<Rgba32>(rgba, w, h);
                 img.Mutate(ctx => ctx.Quantize(new OctreeQuantizer(
                     new QuantizerOptions { MaxColors = 256, Dither = null })));

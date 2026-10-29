@@ -35,12 +35,25 @@ public sealed partial class MainWindow : Window
     private int _thumbNotified;
 
     // ---------- sequence editing state ----------
+    private enum SeqTargetKind { None, Clip, Effect, Audio }
+
     private readonly SequenceDocument _doc = new();
     private bool _seqMode;
     private AnimationClip? _seqClip;
+    private RenderedSequence? _seqRendered;
     private readonly List<WriteableBitmap> _seqBitmaps = new();
     private IReadOnlyList<ResolvedClip> _seqResolved = Array.Empty<ResolvedClip>();
     private string? _seqSelectedClip;
+    private SeqTargetKind _seqTarget = SeqTargetKind.None;
+    private string _seqTargetId = string.Empty;
+    private TransformProperty? _seqKeyProp;
+    private int _seqKeyFrame;
+    private bool _seqKeyIsEffect;
+    private readonly NativeFrameCache _nativeCache = new();
+    private readonly EffectImageCache _fxCache = new();
+    private readonly AudioEngine _audio = new();
+    private readonly Dictionary<string, float[]> _waveforms = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Stopwatch _dragThrottle = new();
     private bool _closingConfirmed;
 
     private AnimationClip? ActiveClip => _seqMode ? _seqClip : _clip;
@@ -70,14 +83,48 @@ public sealed partial class MainWindow : Window
 
         Timeline.ScrubRequested += f => { _engine.Scrub(f); RefreshFrame(); };
         Timeline.SeqClipSelected += OnSeqClipSelected;
-        Timeline.SeqClipMoved += (id, i) => { _doc.MoveClip(id, i); RebuildSequence(); };
-        Timeline.SeqLibraryDrop += (animId, i) => { _doc.AddClip(animId, 1.0, i); RebuildSequence(selectLastAdded: true); };
-        Timeline.SeqRemoveRequested += id => { _doc.RemoveClip(id); RebuildSequence(); };
-        Timeline.SeqDuplicateRequested += id => { _doc.DuplicateClip(id); RebuildSequence(); };
+        Timeline.SeqClipMoved += (id, i) => { _doc.MoveClip(id, i); AfterStructuralEdit(); };
+        Timeline.SeqLibraryDrop += (animId, i) => { var c = _doc.AddClip(animId, 1.0, i); _seqSelectedClip = c.Id; SelectSeqTarget(SeqTargetKind.Clip, c.Id, seekToStart: false); RebuildSequence(); };
+        Timeline.SeqRemoveRequested += id => { _doc.RemoveClip(id); AfterStructuralEdit(); };
+        Timeline.SeqDuplicateRequested += id => { var c = _doc.DuplicateClip(id); _seqSelectedClip = c.Id; AfterStructuralEdit(); };
         Timeline.SeqSpeedRequested += (id, s) => { _doc.SetClipSpeed(id, s); RebuildSequence(); };
-        SeqInspector.ClipSpeedChanged += s => { if (_seqSelectedClip is { } id) { _doc.SetClipSpeed(id, s); RebuildSequence(); } };
+        Timeline.SeqEffectSelected += OnSeqEffectSelected;
+        Timeline.SeqEffectMoved += (id, f) => { _doc.MoveEffect(id, f); RebuildSequence(); };
+        Timeline.SeqEffectRemoveRequested += id => { _doc.RemoveEffect(id); AfterStructuralEdit(); };
+        Timeline.SeqAudioSelected += OnSeqAudioSelected;
+        Timeline.SeqAudioMoved += (id, t) => { _doc.MoveAudio(id, t); RebuildSequence(); };
+        Timeline.SeqAudioRemoveRequested += id => { _doc.RemoveAudio(id); AfterStructuralEdit(); };
+        Timeline.SeqKeyframeSelected += (p, f, fx) => SelectKeyframe(p, f, fx);
+        Timeline.SeqKeyframeMoved += (p, a, b, fx) => MoveSelectedKeyframeTo(b);
+        Timeline.SeqKeyframeDragStarted += () => _doc.BeginDrag("Move keyframe");
+        Timeline.SeqKeyframeDragFinished += () => { _doc.EndDrag(); RebuildSequence(); };
+        SeqInspector.ClipSpeedChanged += s => { if (_seqTargetId is { } id && _seqTarget == SeqTargetKind.Clip) { _doc.SetClipSpeed(id, s); RebuildSequence(); } };
         SeqInspector.ProjectFpsChanged += f => { _doc.SetFps(f); RebuildSequence(); };
         SeqInspector.ProjectRenamed += n => { _doc.Rename(n); UpdateTitle(); };
+        SeqInspector.ClipTransformCommitted += t => { if (_seqTarget == SeqTargetKind.Clip) { _doc.SetClipTransform(_seqTargetId, t); RebuildSequence(); } };
+        SeqInspector.KeyAddRequested += AddKeyframeAtPlayhead;
+        SeqInspector.KeyDeleteRequested += (p, f) => DeleteKeyframe(p, f);
+        SeqInspector.KeySelected += (p, f) => SelectKeyframe(p, f, _seqTarget == SeqTargetKind.Effect);
+        SeqInspector.KeyPrevRequested += () => StepKeyframe(-1);
+        SeqInspector.KeyNextRequested += () => StepKeyframe(1);
+        SeqInspector.EffectTransformCommitted += t => { if (_seqTarget == SeqTargetKind.Effect) { _doc.SetEffectTransform(_seqTargetId, t); RebuildSequence(); } };
+        SeqInspector.EffectStartChanged += v => { if (_seqTarget == SeqTargetKind.Effect) { _doc.MoveEffect(_seqTargetId, v); RebuildSequence(); } };
+        SeqInspector.EffectDurationChanged += v => { if (_seqTarget == SeqTargetKind.Effect) { _doc.ResizeEffect(_seqTargetId, v); RebuildSequence(); } };
+        SeqInspector.EffectLayerChanged += v => { if (_seqTarget == SeqTargetKind.Effect) { _doc.SetEffectLayer(_seqTargetId, v); RebuildSequence(); } };
+        SeqInspector.EffectRenamed += async n => { if (_seqTarget == SeqTargetKind.Effect) { RenameEffect(_seqTargetId, n); } await Task.CompletedTask; };
+        SeqInspector.EffectRelinkRequested += async () => await RelinkEffectAsync();
+        SeqInspector.EffectRemoveRequested += () => { if (_seqTarget == SeqTargetKind.Effect) { _doc.RemoveEffect(_seqTargetId); AfterStructuralEdit(); } };
+        SeqInspector.AudioRenamed += n => { if (_seqTarget == SeqTargetKind.Audio) { RenameAudio(_seqTargetId, n); } };
+        SeqInspector.AudioStartChanged += v => { if (_seqTarget == SeqTargetKind.Audio) { _doc.MoveAudio(_seqTargetId, v); RebuildSequence(); } };
+        SeqInspector.AudioTrimChanged += v => { if (_seqTarget == SeqTargetKind.Audio) { var a = FindAudio(); if (a is not null) { _doc.TrimAudio(_seqTargetId, v, a.DurationSeconds); RebuildSequence(); } } };
+        SeqInspector.AudioVolumeChanged += v => { if (_seqTarget == SeqTargetKind.Audio) { _doc.SetAudioVolume(_seqTargetId, v); } };
+        SeqInspector.AudioMutedChanged += m => { if (_seqTarget == SeqTargetKind.Audio) { _doc.SetAudioMuted(_seqTargetId, m); RebuildSequence(); } };
+        SeqInspector.AudioRelinkRequested += async () => await RelinkAudioAsync();
+        SeqInspector.AudioRemoveRequested += () => { if (_seqTarget == SeqTargetKind.Audio) { _doc.RemoveAudio(_seqTargetId); AfterStructuralEdit(); } };
+        Viewport.Preview.MoveStarted += OnViewportDragStart;
+        Viewport.Preview.MoveDelta += OnViewportMove;
+        Viewport.Preview.MoveFinished += OnViewportDragEnd;
+        Viewport.Preview.DoubleTapped += (_, _) => FitPreview();
 
         OpenPakItem.Click += async (_, _) => await OpenPakAsync();
         OpenAtlasItem.Click += async (_, _) => await OpenAtlasFolderAsync();
@@ -85,12 +132,16 @@ public sealed partial class MainWindow : Window
         OpenProjectItem.Click += async (_, _) => await OpenProjectAsync();
         SaveItem.Click += async (_, _) => await SaveProjectAsync();
         SaveAsItem.Click += async (_, _) => await SaveProjectAsAsync();
+        AddEffectItem.Click += async (_, _) => await AddEffectAsync();
+        AddAudioItem.Click += async (_, _) => await AddAudioAsync();
         ExportPngItem.Click += async (_, _) => await ExportAsync(ExportKind.PngSequence);
         ExportGifItem.Click += async (_, _) => await ExportAsync(ExportKind.Gif);
         ExportSheetItem.Click += async (_, _) => await ExportAsync(ExportKind.SpriteSheet);
         ReloadItem.Click += (_, _) => Reload();
         ExitItem.Click += (_, _) => Close();
         PlayPauseItem.Click += (_, _) => TogglePlay();
+        UndoItem.Click += (_, _) => Undo();
+        RedoItem.Click += (_, _) => Redo();
         PrevFrameItem.Click += (_, _) => { _engine.StepPrevious(); RefreshFrame(); };
         NextFrameItem.Click += (_, _) => { _engine.StepNext(); RefreshFrame(); };
         FirstFrameItem.Click += (_, _) => { _engine.SeekFrame(0); RefreshFrame(); };
@@ -114,6 +165,7 @@ public sealed partial class MainWindow : Window
             {
                 if (!IsEvidenceRun())
                     SaveSettings();
+                _audio.Dispose();
                 return;
             }
             e.Cancel = true;
@@ -121,10 +173,12 @@ public sealed partial class MainWindow : Window
             {
                 _closingConfirmed = true;
                 SaveSettings();
+                _audio.Dispose();
                 Close();
             }
         };
-        _doc.Changed += UpdateTitle;
+        _doc.Changed += () => { UpdateTitle(); UpdateUndoMenu(); }; UpdateUndoMenu();
+        _audio.Problem += m => Dispatcher.UIThread.Post(() => ShowToast(m, 8));
 
         _engine.Loop = true;
         _engine.FrameChanged += () => Dispatcher.UIThread.Post(RefreshFrame);
@@ -372,6 +426,33 @@ public sealed partial class MainWindow : Window
         double delta = now - _lastTickSeconds;
         _lastTickSeconds = now;
         _engine.Tick(TimeSpan.FromSeconds(delta));
+        // Audio stays glued to the clock even when the frame index is static.
+        if (_seqMode)
+            SyncAudio();
+    }
+
+    private readonly Dictionary<string, double?> _audioLengths = new(StringComparer.OrdinalIgnoreCase);
+
+    private double? AudioLengthOf(string path)
+    {
+        if (!_audioLengths.TryGetValue(path, out var len))
+        {
+            len = WaveformService.GetLengthSeconds(path);
+            _audioLengths[path] = len;
+        }
+        return len;
+    }
+
+    private void SyncAudio()
+    {
+        if (!_seqMode || _seqClip is null || _seqClip.FrameCount == 0)
+        {
+            _audio.StopAll();
+            return;
+        }
+        double t = _engine.Position.TotalSeconds;
+        var audible = AudioTimeline.ActiveAt(_doc.Project.Audio, t, AudioLengthOf);
+        _audio.Sync(audible, t, _engine.IsPlaying);
     }
 
     private void RefreshFrame()
@@ -404,6 +485,8 @@ public sealed partial class MainWindow : Window
         {
             Timeline.SetSequencePosition(_engine.CurrentFrameIndex, clip.FrameCount);
             UpdateSequenceSubtitle();
+            UpdateViewportOverlay();
+            SyncAudio();
         }
         else
         {
@@ -411,6 +494,48 @@ public sealed partial class MainWindow : Window
             Inspector.SetPosition(_engine.CurrentFrameIndex, clip.FrameCount, frame?.RegionName ?? "—");
         }
         Transport.SetPlaying(_engine.IsPlaying);
+    }
+
+    /// <summary>Editor-only selection overlay (pivot cross + transformed bounds).</summary>
+    private void UpdateViewportOverlay()
+    {
+        Viewport.Preview.MoveEnabled = false;
+        Viewport.Preview.SelectionRect = null;
+        Viewport.Preview.PivotMarker = null;
+        if (!_seqMode || _seqRendered is null)
+            return;
+        int g = _engine.CurrentFrameIndex;
+        if (_seqTarget == SeqTargetKind.Clip)
+        {
+            var r = _seqResolved.FirstOrDefault(r => g >= r.StartFrame && g < r.StartFrame + r.OutputFrames);
+            var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
+            if (r is null || clip is null)
+                return;
+            var native = _nativeCache.Get(_loader!, clip.AnimationId,
+                SequenceTiming.SourceIndex(g - r.StartFrame, r.SourceFrames, r.OutputFrames), _doc.Project.Fps);
+            var t = clip.EvaluateAt(g - r.StartFrame);
+            var (x, y, w, h) = TransformLayout.MapRect(native.Width, native.Height, t,
+                _seqRendered.Width, _seqRendered.Height);
+            Viewport.Preview.SelectionRect = new Rect(x, y, w, h);
+            var (px, py) = TransformLayout.PivotPoint(t, _seqRendered.Width, _seqRendered.Height);
+            Viewport.Preview.PivotMarker = new Point(px, py);
+            Viewport.Preview.MoveEnabled = true;
+        }
+        else if (_seqTarget == SeqTargetKind.Effect)
+        {
+            var e = _doc.Project.Effects.FirstOrDefault(e => e.Id == _seqTargetId);
+            var bmp = e is null ? null : _fxCache.Get(e.ImagePath);
+            if (e is null || bmp is null)
+                return;
+            int local = Math.Clamp(g - e.StartFrame, 0, Math.Max(0, e.DurationFrames - 1));
+            var t = e.EvaluateAt(local);
+            var (x, y, w, h) = TransformLayout.MapRect(bmp.Width, bmp.Height, t,
+                _seqRendered.Width, _seqRendered.Height);
+            Viewport.Preview.SelectionRect = new Rect(x, y, w, h);
+            var (px, py) = TransformLayout.PivotPoint(t, _seqRendered.Width, _seqRendered.Height);
+            Viewport.Preview.PivotMarker = new Point(px, py);
+            Viewport.Preview.MoveEnabled = true;
+        }
     }
 
     private void UpdateSequenceSubtitle()
@@ -517,7 +642,8 @@ public sealed partial class MainWindow : Window
             ("Space", "Play / pause"),
             ("← / →", "Previous / next frame"),
             ("Home / End", "First / last frame"),
-            ("Delete", "Remove selected clip (sequence)"),
+            ("Delete", "Remove selected clip / effect / audio"),
+            ("Ctrl+Z / Ctrl+Y", "Undo / redo (sequence edits)"),
             ("Ctrl+F", "Focus animation search"),
             ("Ctrl+0", "Fit preview to view"),
             ("Ctrl+B", "Toggle checkerboard background"),
@@ -634,6 +760,18 @@ public sealed partial class MainWindow : Window
                     _ = OpenProjectAsync();
                     e.Handled = true;
                     break;
+                case Key.Z when e.KeyModifiers.HasFlag(KeyModifiers.Shift):
+                    Redo();
+                    e.Handled = true;
+                    break;
+                case Key.Z:
+                    Undo();
+                    e.Handled = true;
+                    break;
+                case Key.Y:
+                    Redo();
+                    e.Handled = true;
+                    break;
                 case Key.N:
                     _ = NewProjectAsync();
                     e.Handled = true;
@@ -691,10 +829,17 @@ public sealed partial class MainWindow : Window
                 }
                 break;
             case Key.Delete:
-                if (_seqMode && _seqSelectedClip is { } doomed)
+                if (_seqMode)
                 {
-                    _doc.RemoveClip(doomed);
-                    RebuildSequence();
+                    if (_seqTarget == SeqTargetKind.Clip && _seqTargetId is { } dc)
+                        _doc.RemoveClip(dc);
+                    else if (_seqTarget == SeqTargetKind.Effect && _seqTargetId is { } de)
+                        _doc.RemoveEffect(de);
+                    else if (_seqTarget == SeqTargetKind.Audio && _seqTargetId is { } da)
+                        _doc.RemoveAudio(da);
+                    else
+                        break;
+                    AfterStructuralEdit();
                     e.Handled = true;
                 }
                 break;
@@ -838,47 +983,62 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Recomposes the virtual sequence clip from the project and refreshes
-    /// every sequence surface (timeline, inspector, viewport, engine).
-    /// Preview and exporters share these exact frames.
+    /// Recomposes the sequence through the shared renderer (transforms +
+    /// effect layers) and refreshes every sequence surface. Preview bitmaps,
+    /// timeline thumbnails and all exporters consume these exact frames.
     /// </summary>
     private void RebuildSequence(bool selectLastAdded = false)
     {
         if (_loader is null)
             return;
-        var missing = ProjectSerializer.ValidateAnimations(_doc.Project, id => _loader.Catalog.Contains(id));
-        if (missing.MissingAnimationIds.Count > 0)
-        {
-            ShowToast("Missing animations (skipped in playback/exports): " +
-                string.Join(", ", missing.MissingAnimationIds.Take(5)) +
-                (missing.MissingAnimationIds.Count > 5 ? $" +{missing.MissingAnimationIds.Count - 5} more" : string.Empty));
-        }
+        WarnMissingAssets();
 
         int keepGlobal = _engine.CurrentFrameIndex;
         ClearSeqCache();
-        var (clip, resolved) = SequenceComposer.Compose(_doc.Project, _loader);
-        _seqClip = clip;
+        _seqResolved = SequenceComposer.Resolve(_doc.Project, id => _loader.Catalog.GetFrameRegions(id).Count);
+        _seqRendered = SequenceCompositor.Render(_doc.Project, _loader, _nativeCache, _fxCache, out var resolved);
         _seqResolved = resolved;
-        foreach (var f in clip.Frames)
-            _seqBitmaps.Add(FrameBitmap.ToWriteableBitmap(f));
+
+        var frames = new List<ClipFrame>(_seqRendered.Frames.Count);
+        for (int i = 0; i < _seqRendered.Frames.Count; i++)
+        {
+            frames.Add(new ClipFrame
+            {
+                Index = i,
+                RegionName = $"seq_{i:0000}",
+                Width = _seqRendered.Width,
+                Height = _seqRendered.Height,
+                Rgba = _seqRendered.Frames[i],
+                Duration = TimeSpan.FromSeconds(1.0 / _doc.Project.Fps),
+            });
+            _seqBitmaps.Add(FrameBitmap.FromRgba(_seqRendered.Frames[i], _seqRendered.Width, _seqRendered.Height));
+        }
+        _seqClip = new AnimationClip
+        {
+            Id = _doc.Project.Name,
+            Frames = frames,
+            SourceDescription = $"Sequence '{_doc.Project.Name}' ({resolved.Count} clips, {frames.Count} frames @ {_doc.Project.Fps:0.#} FPS)",
+            DefaultFps = _doc.Project.Fps,
+        };
 
         if (_seqSelectedClip is null || resolved.All(r => r.Clip.Id != _seqSelectedClip))
             _seqSelectedClip = resolved.Count > 0 ? resolved[^1].Clip.Id : null;
         if (selectLastAdded && resolved.Count > 0)
             _seqSelectedClip = resolved[^1].Clip.Id;
+        if (_seqTarget == SeqTargetKind.Clip && !_doc.Project.Clips.Any(c => c.Id == _seqTargetId))
+            ClearSeqTarget();
 
-        Timeline.SetSequenceData(BuildBlocks(), _seqSelectedClip,
-            Math.Min(keepGlobal, Math.Max(0, clip.FrameCount - 1)), _doc.Project.Fps);
-        UpdateSeqInspector();
-        Transport.SetEnabled(clip.FrameCount > 0);
+        RefreshSequenceTimeline(Math.Min(keepGlobal, Math.Max(0, _seqClip.FrameCount - 1)));
+        RefreshSequenceInspector();
+        Transport.SetEnabled(_seqClip.FrameCount > 0);
 
         if (_seqMode)
         {
-            if (clip.FrameCount > 0)
+            if (_seqClip.FrameCount > 0)
             {
                 bool wasPlaying = _engine.IsPlaying;
-                _engine.Load(clip);
-                _engine.SeekFrame(Math.Min(keepGlobal, clip.FrameCount - 1));
+                _engine.Load(_seqClip);
+                _engine.SeekFrame(Math.Min(keepGlobal, _seqClip.FrameCount - 1));
                 if (!wasPlaying)
                     _engine.Pause();
             }
@@ -889,6 +1049,26 @@ public sealed partial class MainWindow : Window
             UpdateTitle();
             RefreshFrame();
         }
+    }
+
+    private void WarnMissingAssets()
+    {
+        if (_loader is null)
+            return;
+        var missingAnim = ProjectSerializer.ValidateAnimations(_doc.Project, id => _loader.Catalog.Contains(id));
+        var notes = new List<string>();
+        if (missingAnim.MissingAnimationIds.Count > 0)
+            notes.Add("animations: " + string.Join(", ", missingAnim.MissingAnimationIds.Take(5)));
+        var missingFx = _doc.Project.Effects
+            .Where(e => !File.Exists(e.ImagePath)).Select(e => e.Name).Distinct().Take(5).ToList();
+        if (missingFx.Count > 0)
+            notes.Add("effects: " + string.Join(", ", missingFx));
+        var missingAu = _doc.Project.Audio
+            .Where(a => !File.Exists(a.AudioPath)).Select(a => a.Name).Distinct().Take(5).ToList();
+        if (missingAu is { Count: > 0 })
+            notes.Add("audio: " + string.Join(", ", missingAu));
+        if (notes.Count > 0)
+            ShowToast("Missing assets (skipped in preview/exports): " + string.Join("; ", notes));
     }
 
     private IList<SequenceTrackControl.ClipBlock> BuildBlocks()
@@ -912,26 +1092,535 @@ public sealed partial class MainWindow : Window
         return blocks;
     }
 
-    private void OnSeqClipSelected(string clipId)
+    private IList<SequenceTrackControl.FxBlock> BuildFxBlocks() =>
+        _doc.Project.Effects
+            .OrderBy(e => e.Layer)
+            .Select(e => new SequenceTrackControl.FxBlock(e.Id, e.Name, e.StartFrame, e.DurationFrames, e.Layer))
+            .ToList();
+
+    private IList<SequenceTrackControl.AudioBlock> BuildAudioBlocks()
     {
-        _seqSelectedClip = clipId;
-        var r = _seqResolved.FirstOrDefault(r => r.Clip.Id == clipId);
-        if (r is not null)
+        var list = new List<SequenceTrackControl.AudioBlock>();
+        foreach (var a in _doc.Project.Audio)
         {
-            _engine.SeekFrame(r.StartFrame);
-            Timeline.SetSequencePosition(r.StartFrame, _seqClip?.FrameCount ?? 0);
+            if (!_waveforms.TryGetValue(a.AudioPath, out var peaks))
+            {
+                peaks = WaveformService.GetPeaks(a.AudioPath);
+                _waveforms[a.AudioPath] = peaks;
+            }
+            double dur;
+            if (a.DurationSeconds is { } fixedDur)
+                dur = fixedDur;
+            else if (WaveformService.GetLengthSeconds(a.AudioPath) is { } len)
+                dur = Math.Max(0, len - a.TrimStartSeconds);
+            else
+                dur = 60.0;
+            dur = Math.Max(0.1, dur);
+            list.Add(new SequenceTrackControl.AudioBlock(a.Id, a.Name, a.StartSeconds, dur, peaks, a.Muted));
         }
-        UpdateSeqInspector();
+        return list;
+    }
+
+    private IList<SequenceTrackControl.KeyMarker> BuildKeyMarkers()
+    {
+        IReadOnlyList<TransformKeyframe>? keys = _seqTarget switch
+        {
+            SeqTargetKind.Clip => _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId)?.Keyframes,
+            SeqTargetKind.Effect => _doc.Project.Effects.FirstOrDefault(e => e.Id == _seqTargetId)?.Keyframes,
+            _ => null,
+        };
+        if (keys is null)
+            return Array.Empty<SequenceTrackControl.KeyMarker>();
+        return keys.Select(k => new SequenceTrackControl.KeyMarker(k.Property, k.Frame, false)).ToList();
+    }
+
+    private SequenceTrackControl.KeyMarker? BuildSelectedKey() =>
+        _seqKeyProp is { } p
+            ? new SequenceTrackControl.KeyMarker(p, _seqKeyFrame, true)
+            : null;
+
+    private void ClearSeqTarget()
+    {
+        _seqTarget = SeqTargetKind.None;
+        _seqTargetId = string.Empty;
+        _seqKeyProp = null;
+    }
+
+    private void SelectSeqTarget(SeqTargetKind kind, string id, bool seekToStart = true)
+    {
+        _seqTarget = kind;
+        _seqTargetId = id;
+        _seqKeyProp = null;
+        if (kind == SeqTargetKind.Clip)
+            _seqSelectedClip = id;
+        if (seekToStart)
+        {
+            int start = kind switch
+            {
+                SeqTargetKind.Clip => _seqResolved.FirstOrDefault(r => r.Clip.Id == id)?.StartFrame ?? 0,
+                SeqTargetKind.Effect => _doc.Project.Effects.FirstOrDefault(e => e.Id == id)?.StartFrame ?? 0,
+                SeqTargetKind.Audio => (int)Math.Round(
+                    (_doc.Project.Audio.FirstOrDefault(a => a.Id == id)?.StartSeconds ?? 0) * _doc.Project.Fps),
+                _ => _engine.CurrentFrameIndex,
+            };
+            _engine.SeekFrame(Math.Min(start, Math.Max(0, (_seqClip?.FrameCount ?? 1) - 1)));
+        }
+        RefreshSequenceTimeline(_engine.CurrentFrameIndex);
+        RefreshSequenceInspector();
         RefreshFrame();
     }
 
-    private void UpdateSeqInspector()
+    private void OnSeqClipSelected(string clipId) => SelectSeqTarget(SeqTargetKind.Clip, clipId);
+
+    private void OnSeqEffectSelected(string effectId) => SelectSeqTarget(SeqTargetKind.Effect, effectId);
+
+    private void OnSeqAudioSelected(string audioId) => SelectSeqTarget(SeqTargetKind.Audio, audioId, seekToStart: false);
+
+    private void RefreshSequenceTimeline(int currentFrame)
     {
-        var r = _seqResolved.FirstOrDefault(r => r.Clip.Id == _seqSelectedClip);
-        if (r is not null)
-            SeqInspector.ShowClip(r.Clip.AnimationId, r.Clip.Speed, r.OutputFrames, _doc.Project.Fps);
+        var blocks = BuildBlocks();
+        var fxBlocks = BuildFxBlocks();
+        var auBlocks = BuildAudioBlocks();
+        Timeline.SetSequenceData(blocks, fxBlocks, auBlocks,
+            _seqTarget == SeqTargetKind.Clip ? _seqTargetId : _seqSelectedClip,
+            _seqTarget == SeqTargetKind.Effect ? _seqTargetId : null,
+            _seqTarget == SeqTargetKind.Audio ? _seqTargetId : null,
+            BuildKeyMarkers(), BuildSelectedKey(),
+            showEffectKeys: _seqTarget != SeqTargetKind.Clip,
+            currentFrame, _doc.Project.Fps);
+    }
+
+    private void AfterStructuralEdit()
+    {
+        if (_seqTarget != SeqTargetKind.None && !SeqTargetExists())
+            ClearSeqTarget();
+        RebuildSequence();
+    }
+
+    private bool SeqTargetExists() => _seqTarget switch
+    {
+        SeqTargetKind.Clip => _doc.Project.Clips.Any(c => c.Id == _seqTargetId),
+        SeqTargetKind.Effect => _doc.Project.Effects.Any(e => e.Id == _seqTargetId),
+        SeqTargetKind.Audio => _doc.Project.Audio.Any(a => a.Id == _seqTargetId),
+        _ => false,
+    };
+
+    private void SelectKeyframe(TransformProperty prop, int frame, bool isEffect)
+    {
+        if (_seqTarget != SeqTargetKind.Clip && _seqTarget != SeqTargetKind.Effect)
+            return;
+        bool targetIsEffect = _seqTarget == SeqTargetKind.Effect;
+        if (isEffect != targetIsEffect)
+            return;
+        _seqKeyProp = prop;
+        _seqKeyFrame = frame;
+        RefreshSequenceTimeline(_engine.CurrentFrameIndex);
+        RefreshSequenceInspector();
+    }
+
+    private int SeqLocalFrame()
+    {
+        int anchor = _seqTarget switch
+        {
+            SeqTargetKind.Clip => _seqResolved.FirstOrDefault(r => r.Clip.Id == _seqTargetId)?.StartFrame ?? 0,
+            SeqTargetKind.Effect => _doc.Project.Effects.FirstOrDefault(e => e.Id == _seqTargetId)?.StartFrame ?? 0,
+            _ => 0,
+        };
+        return Math.Max(0, _engine.CurrentFrameIndex - anchor);
+    }
+
+    private void AddKeyframeAtPlayhead(TransformProperty prop)
+    {
+        if (_seqTarget != SeqTargetKind.Clip && _seqTarget != SeqTargetKind.Effect)
+            return;
+        int local = SeqLocalFrame();
+        double value = EvaluateCurrent(prop);
+        if (_seqTarget == SeqTargetKind.Clip)
+            _doc.AddKeyframe(_seqTargetId, prop, local, value);
         else
-            SeqInspector.Clear();
+            _doc.AddEffectKeyframe(_seqTargetId, prop, local, value);
+        _seqKeyProp = prop;
+        _seqKeyFrame = local;
+        RebuildSequence();
+    }
+
+    private double EvaluateCurrent(TransformProperty prop)
+    {
+        int local = SeqLocalFrame();
+        if (_seqTarget == SeqTargetKind.Clip)
+        {
+            var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
+            if (clip is null)
+                return Transform.Identity.Get(prop);
+            return KeyframeEvaluator.Evaluate(clip.Keyframes, prop, local, clip.BaseTransform.Get(prop));
+        }
+        var e = _doc.Project.Effects.FirstOrDefault(e => e.Id == _seqTargetId);
+        if (e is null)
+            return Transform.Identity.Get(prop);
+        return KeyframeEvaluator.Evaluate(e.Keyframes, prop, local, e.BaseTransform.Get(prop));
+    }
+
+    private void DeleteKeyframe(TransformProperty prop, int frame)
+    {
+        if (_seqTarget == SeqTargetKind.Clip)
+            _doc.RemoveKeyframe(_seqTargetId, prop, frame);
+        else if (_seqTarget == SeqTargetKind.Effect)
+            _doc.RemoveEffectKeyframe(_seqTargetId, prop, frame);
+        else
+            return;
+        if (_seqKeyProp == prop && _seqKeyFrame == frame)
+            _seqKeyProp = null;
+        RebuildSequence();
+    }
+
+    private void StepKeyframe(int direction)
+    {
+        IReadOnlyList<TransformKeyframe>? keys = _seqTarget switch
+        {
+            SeqTargetKind.Clip => _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId)?.Keyframes,
+            SeqTargetKind.Effect => _doc.Project.Effects.FirstOrDefault(e => e.Id == _seqTargetId)?.Keyframes,
+            _ => null,
+        };
+        if (keys is null || keys.Count == 0)
+            return;
+        int anchor = _seqTarget == SeqTargetKind.Clip
+            ? _seqResolved.FirstOrDefault(r => r.Clip.Id == _seqTargetId)?.StartFrame ?? 0
+            : _doc.Project.Effects.FirstOrDefault(e => e.Id == _seqTargetId)?.StartFrame ?? 0;
+        var ordered = keys.Select(k => k.Frame).Distinct().OrderBy(f => f).ToList();
+        int local = SeqLocalFrame();
+        int target = direction > 0
+            ? ordered.FirstOrDefault(f => f > local, -1)
+            : ordered.LastOrDefault(f => f < local, -1);
+        if (target < 0)
+            target = direction > 0 ? ordered[0] : ordered[^1];
+        var key = keys.First(k => k.Frame == target);
+        _seqKeyProp = key.Property;
+        _seqKeyFrame = target;
+        _engine.SeekFrame(Math.Min(anchor + target, Math.Max(0, (_seqClip?.FrameCount ?? 1) - 1)));
+        RefreshSequenceTimeline(_engine.CurrentFrameIndex);
+        RefreshSequenceInspector();
+        RefreshFrame();
+    }
+
+    private void MoveSelectedKeyframeTo(int toFrame)
+    {
+        if (_seqKeyProp is not { } prop)
+            return;
+        if (_seqTarget == SeqTargetKind.Clip)
+            _doc.MoveKeyframeDirect(_seqTargetId, prop, _seqKeyFrame, Math.Max(0, toFrame));
+        else if (_seqTarget == SeqTargetKind.Effect)
+            _doc.MoveEffectKeyframeDirect(_seqTargetId, prop, _seqKeyFrame, Math.Max(0, toFrame));
+        else
+            return;
+        _seqKeyFrame = Math.Max(0, toFrame);
+        RebuildSequence();
+    }
+
+    private void RenameEffect(string id, string name)
+    {
+        try
+        {
+            _doc.RenameEffect(id, name);
+            RebuildSequence();
+        }
+        catch (Exception ex)
+        {
+            ShowToast(ex.Message);
+        }
+    }
+
+    private async Task RelinkEffectAsync()
+    {
+        if (_seqTarget != SeqTargetKind.Effect)
+            return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.StorageProvider is not { } provider)
+            return;
+        var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose replacement effect image",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { new FilePickerFileType("Images") { Patterns = new[] { "*.png" } } },
+        });
+        if (files.Count == 0)
+            return;
+        _doc.SetEffectImage(_seqTargetId, files[0].Path.LocalPath);
+        RebuildSequence();
+    }
+
+    private async Task RelinkAudioAsync()
+    {
+        if (_seqTarget != SeqTargetKind.Audio)
+            return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.StorageProvider is not { } provider)
+            return;
+        var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose replacement WAV file",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { new FilePickerFileType("WAV audio") { Patterns = new[] { "*.wav" } } },
+        });
+        if (files.Count == 0)
+            return;
+        _doc.SetAudioPath(_seqTargetId, files[0].Path.LocalPath);
+        _waveforms.Remove(files[0].Path.LocalPath);
+        _audioLengths.Remove(files[0].Path.LocalPath);
+        RebuildSequence();
+    }
+
+    private async Task AddEffectAsync()
+    {
+        if (_loader is null)
+        {
+            ShowToast("Open a game source first.");
+            return;
+        }
+        if (!_seqMode)
+            SetSequenceMode(true);
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.StorageProvider is not { } provider)
+            return;
+        var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Import transparent PNG effect",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { new FilePickerFileType("Images") { Patterns = new[] { "*.png" } } },
+        });
+        if (files.Count == 0)
+            return;
+        try
+        {
+            int start = _seqClip?.FrameCount ?? 0;
+            var fx = _doc.AddEffect(files[0].Path.LocalPath, Math.Max(0, _engine.CurrentFrameIndex));
+            _ = start;
+            SelectSeqTarget(SeqTargetKind.Effect, fx.Id, seekToStart: false);
+            RebuildSequence();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Could not add effect: {ex.Message}");
+        }
+        await Task.CompletedTask;
+    }
+
+    private async Task AddAudioAsync()
+    {
+        if (_loader is null)
+        {
+            ShowToast("Open a game source first.");
+            return;
+        }
+        if (!_seqMode)
+            SetSequenceMode(true);
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.StorageProvider is not { } provider)
+            return;
+        var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Import WAV audio",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { new FilePickerFileType("WAV audio") { Patterns = new[] { "*.wav" } } },
+        });
+        if (files.Count == 0)
+            return;
+        try
+        {
+            double t = _seqClip is null || _seqClip.FrameCount == 0
+                ? 0
+                : _engine.CurrentFrameIndex / _doc.Project.Fps;
+            var au = _doc.AddAudio(files[0].Path.LocalPath, Math.Max(0, t));
+            SelectSeqTarget(SeqTargetKind.Audio, au.Id, seekToStart: false);
+            RebuildSequence();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Could not add audio: {ex.Message}");
+        }
+        await Task.CompletedTask;
+    }
+
+    private void RenameAudio(string id, string name)
+    {
+        try
+        {
+            _doc.RenameAudio(id, name);
+            RebuildSequence();
+        }
+        catch (Exception ex)
+        {
+            ShowToast(ex.Message);
+        }
+    }
+
+    private AudioClip? FindAudio() =>
+        _doc.Project.Audio.FirstOrDefault(a => a.Id == _seqTargetId);
+
+    private void Undo()
+    {
+        if (!_seqMode || !_doc.History.CanUndo)
+            return;
+        if (_doc.Undo())
+        {
+            if (!_seqResolved.Any(r => r.Clip.Id == _seqSelectedClip))
+                _seqSelectedClip = _doc.Project.Clips.FirstOrDefault()?.Id;
+            if (_seqTarget != SeqTargetKind.None && !SeqTargetExists())
+                ClearSeqTarget();
+            RebuildSequence();
+            UpdateUndoMenu();
+        }
+    }
+
+    private void Redo()
+    {
+        if (!_seqMode || !_doc.History.CanRedo)
+            return;
+        if (_doc.Redo())
+        {
+            if (!_seqResolved.Any(r => r.Clip.Id == _seqSelectedClip))
+                _seqSelectedClip = _doc.Project.Clips.FirstOrDefault()?.Id;
+            if (_seqTarget != SeqTargetKind.None && !SeqTargetExists())
+                ClearSeqTarget();
+            RebuildSequence();
+            UpdateUndoMenu();
+        }
+    }
+
+    private void UpdateUndoMenu()
+    {
+        UndoItem.Header = _doc.History.UndoLabel is { } u ? $"Undo {u}" : "Undo";
+        UndoItem.IsEnabled = _seqMode && _doc.History.CanUndo;
+        RedoItem.Header = _doc.History.RedoLabel is { } r ? $"Redo {r}" : "Redo";
+        RedoItem.IsEnabled = _seqMode && _doc.History.CanRedo;
+    }
+
+    // ---------- viewport direct manipulation ----------
+
+    private Transform? _moveBase;
+    private readonly Stopwatch _moveThrottle = new();
+
+    private void OnViewportDragStart()
+    {
+        if (!_seqMode)
+            return;
+        _moveBase = _seqTarget switch
+        {
+            SeqTargetKind.Clip => _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId)?.BaseTransform,
+            SeqTargetKind.Effect => _doc.Project.Effects.FirstOrDefault(e => e.Id == _seqTargetId)?.BaseTransform,
+            _ => null,
+        };
+        if (_moveBase is null)
+            return;
+        _moveThrottle.Restart();
+        _doc.BeginDrag("Move selection");
+    }
+
+    private void OnViewportMove(Vector total)
+    {
+        if (_moveBase is null || !_seqMode)
+            return;
+        if (_moveThrottle.IsRunning && _moveThrottle.ElapsedMilliseconds < 40)
+            return;
+        _moveThrottle.Restart();
+        double zoom = Math.Max(1.0, Viewport.CurrentZoom);
+        // Absolute position from gesture start: no drift, no accumulation error.
+        if (_seqTarget == SeqTargetKind.Clip)
+        {
+            _doc.SetClipTransformDirect(_seqTargetId,
+                _moveBase with { X = _moveBase.X + total.X / zoom, Y = _moveBase.Y + total.Y / zoom });
+        }
+        else if (_seqTarget == SeqTargetKind.Effect)
+        {
+            _doc.SetEffectTransformDirect(_seqTargetId,
+                _moveBase with { X = _moveBase.X + total.X / zoom, Y = _moveBase.Y + total.Y / zoom });
+        }
+        else
+        {
+            return;
+        }
+        RebuildSequence();
+        RefreshFrame();
+    }
+
+    private void OnViewportDragEnd()
+    {
+        if (_moveBase is null)
+            return;
+        _moveBase = null;
+        _doc.EndDrag();
+        RebuildSequence();
+        RefreshFrame();
+    }
+
+    private void UpdateSeqInspector() => RefreshSequenceInspector();
+
+    private void RefreshSequenceInspector()
+    {
+        switch (_seqTarget)
+        {
+            case SeqTargetKind.Clip:
+            {
+                var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
+                var r = _seqResolved.FirstOrDefault(r => r.Clip.Id == _seqTargetId);
+                if (clip is null || r is null)
+                {
+                    SeqInspector.ShowNothing();
+                    break;
+                }
+                SeqInspector.ShowClip(clip.AnimationId, clip.Speed, r.OutputFrames, _doc.Project.Fps,
+                    clip.BaseTransform, clip.Keyframes);
+                if (_seqKeyProp is { } prop)
+                {
+                    var key = clip.Keyframes.FirstOrDefault(k => k.Property == prop && k.Frame == _seqKeyFrame);
+                    SeqInspector.ShowKeys(clip.Keyframes);
+                    SeqInspector.HighlightKey(prop, key?.Frame ?? _seqKeyFrame);
+                }
+                else
+                {
+                    SeqInspector.ShowKeys(clip.Keyframes);
+                }
+                break;
+            }
+            case SeqTargetKind.Effect:
+            {
+                var e = _doc.Project.Effects.FirstOrDefault(e => e.Id == _seqTargetId);
+                if (e is null)
+                {
+                    SeqInspector.ShowNothing();
+                    break;
+                }
+                SeqInspector.ShowEffect(e.Name, e.ImagePath, e.StartFrame, e.DurationFrames, e.Layer, e.BaseTransform);
+                SeqInspector.ShowKeys(e.Keyframes);
+                break;
+            }
+            case SeqTargetKind.Audio:
+            {
+                var a = _doc.Project.Audio.FirstOrDefault(a => a.Id == _seqTargetId);
+                if (a is null)
+                {
+                    SeqInspector.ShowNothing();
+                    break;
+                }
+                SeqInspector.ShowAudio(a.Name, a.AudioPath, a.StartSeconds, a.TrimStartSeconds,
+                    a.DurationSeconds ?? WaveformService.GetLengthSeconds(a.AudioPath) ?? 0, a.Volume, a.Muted);
+                break;
+            }
+            default:
+            {
+                var r = _seqResolved.FirstOrDefault(rr => rr.Clip.Id == _seqSelectedClip);
+                if (r is not null)
+                {
+                    var clip = _doc.Project.Clips.First(c => c.Id == r.Clip.Id);
+                    SeqInspector.ShowClip(clip.AnimationId, clip.Speed, r.OutputFrames, _doc.Project.Fps,
+                        clip.BaseTransform, clip.Keyframes);
+                }
+                else
+                {
+                    SeqInspector.ShowNothing();
+                }
+                break;
+            }
+        }
         SeqInspector.ShowProject(_doc.Project.Name, _doc.Project.Fps,
             _seqResolved.Count, _seqClip?.FrameCount ?? 0);
     }
@@ -1098,11 +1787,15 @@ public sealed partial class MainWindow : Window
             // Build on demand so export reflects the current project.
             RebuildSequence();
         }
-        if (_seqClip is null || _seqClip.FrameCount == 0)
+        if (_seqClip is null || _seqClip.FrameCount == 0 || _seqRendered is null)
         {
             ShowToast("Add clips to the sequence first (drag animations from the library).");
             return;
         }
+        // Preview and exports share these exact composed frames.
+        var rendered = new RenderedSequence(
+            _seqRendered.Width, _seqRendered.Height,
+            _seqClip.Frames.Select(f => f.Rgba).ToList());
 
         var dialog = new ExportDialog(kind, _seqClip.FrameCount, _doc.Project.Fps);
         _ = dialog.ShowDialog(this);
@@ -1117,14 +1810,14 @@ public sealed partial class MainWindow : Window
             switch (settings.Kind)
             {
                 case ExportKind.PngSequence:
-                    await Task.Run(() => PngSequenceExporter.Export(
-                        _seqClip.Frames, settings.Destination, settings.Overwrite, progress));
+                    await Task.Run(() => PngSequenceExporter.ExportRendered(
+                        rendered, settings.Destination, settings.Overwrite, progress));
                     dialog.ReportDone($"Exported {_seqClip.FrameCount} PNG frames to {settings.Destination}");
                     break;
                 case ExportKind.Gif:
                     GifExporter.GifExportInfo info = default!;
-                    await Task.Run(() => info = GifExporter.Export(
-                        _seqClip.Frames, _doc.Project.Fps, settings.Destination,
+                    await Task.Run(() => info = GifExporter.ExportRendered(
+                        rendered, _doc.Project.Fps, settings.Destination,
                         settings.GifLoop, settings.Overwrite, progress));
                     dialog.ReportDone(
                         $"Exported GIF ({info.FrameCount} frames, {info.EffectiveFps:0.#} FPS effective, " +
@@ -1134,7 +1827,7 @@ public sealed partial class MainWindow : Window
                     SpriteSheetExporter.SheetInfo sheet = default!;
                     string meta = System.IO.Path.ChangeExtension(settings.Destination, ".json");
                     await Task.Run(() => sheet = SpriteSheetExporter.Export(
-                        _seqClip.Frames, _seqResolved, _doc.Project.Fps,
+                        rendered, _seqResolved, _doc.Project.Fps,
                         settings.Destination, meta, settings.SheetColumns,
                         settings.SheetPadding, settings.Overwrite, progress));
                     dialog.ReportDone(
@@ -1154,17 +1847,49 @@ public sealed partial class MainWindow : Window
         Array.IndexOf(Environment.GetCommandLineArgs(), "--evidence") >= 0;
 
     /// <summary>
-    /// Builds the canonical Katana evidence sequence, saves + reopens the
-    /// project, and exports PNG/GIF/sheet — exercising the full AS-M3 loop
-    /// in the real app. Outputs are verified externally (docs/AS-M3-REPORT).
+    /// Builds the Katana evidence sequence with AS-M4 authoring (clip
+    /// keyframes, an effect overlay, an audio track, undo/redo), then saves,
+    /// reopens and exports. Outputs are verified externally (docs/AS-M4).
+    /// Effect art and test audio are generated locally — no game/mod assets.
     /// </summary>
     private async Task RunSequenceEvidenceAsync(string dir)
     {
+        GenerateEvidenceAssets(dir, out string fxPath, out string wavPath);
+
         _doc.New("Katana Combo");
         _doc.AddClip("AtkKatanaA", 1.0);
         _doc.AddClip("AtkKatanaB2", 1.0);
         _doc.AddClip("AtkKatanaB3", 0.5);
         _doc.AddClip("AtkKatanaB4", 1.25);
+        // Transform keyframes on the second clip (B2): lunge out and scale pulse.
+        var b2 = _doc.Project.Clips[1];
+        _doc.AddKeyframe(b2.Id, TransformProperty.X, 0, 0);
+        _doc.AddKeyframe(b2.Id, TransformProperty.X, 5, 12);
+        _doc.AddKeyframe(b2.Id, TransformProperty.ScaleX, 0, 1);
+        _doc.AddKeyframe(b2.Id, TransformProperty.ScaleX, 5, 1.5, KeyframeInterpolation.Linear);
+        _doc.AddKeyframe(b2.Id, TransformProperty.ScaleX, 10, 1, KeyframeInterpolation.Linear);
+        // Effect overlay at the B2 strike: expanding fading ring.
+        var fx = _doc.AddEffect(fxPath, startFrame: 26, durationFrames: 12);
+        _doc.AddEffectKeyframe(fx.Id, TransformProperty.ScaleX, 0, 0.2);
+        _doc.AddEffectKeyframe(fx.Id, TransformProperty.ScaleX, 11, 1.6, KeyframeInterpolation.Linear);
+        _doc.AddEffectKeyframe(fx.Id, TransformProperty.ScaleY, 0, 0.2);
+        _doc.AddEffectKeyframe(fx.Id, TransformProperty.ScaleY, 11, 1.6, KeyframeInterpolation.Linear);
+        _doc.AddEffectKeyframe(fx.Id, TransformProperty.Opacity, 0, 1.0);
+        _doc.AddEffectKeyframe(fx.Id, TransformProperty.Opacity, 11, 0.0, KeyframeInterpolation.Linear);
+        // Audio bed.
+        _doc.AddAudio(wavPath, startSeconds: 0.5);
+
+        // Missing-asset path must degrade, not crash.
+        var bogus = _doc.AddEffect(Path.Combine(dir, "does-not-exist.png"), 0, 5);
+        RebuildSequence();
+        _doc.RemoveEffect(bogus.Id);
+
+        // Undo/redo round trip on the audio add.
+        if (!_doc.Undo())
+            throw new InvalidOperationException("Undo failed in evidence run.");
+        if (!_doc.Redo())
+            throw new InvalidOperationException("Redo failed in evidence run.");
+
         SetSequenceMode(true);
         await Task.Delay(400);
         // Select the second clip to show clip selection + inspector state.
@@ -1181,14 +1906,77 @@ public sealed partial class MainWindow : Window
         _doc.New();
         await OpenProjectFileAsync(projectPath);
 
-        var frames = _seqClip?.Frames ?? throw new InvalidOperationException("Sequence compose failed.");
+        if (_seqRendered is null || _seqClip is null || _seqClip.FrameCount == 0)
+            throw new InvalidOperationException("Sequence compose failed.");
+        var rendered = new RenderedSequence(
+            _seqRendered.Width, _seqRendered.Height,
+            _seqClip.Frames.Select(f => f.Rgba).ToList());
         string pngDir = Path.Combine(dir, "png");
-        PngSequenceExporter.Export(frames, pngDir, overwrite: true);
-        GifExporter.Export(frames, _doc.Project.Fps, Path.Combine(dir, "combo.gif"), loop: true, overwrite: true);
-        SpriteSheetExporter.Export(frames, _seqResolved, _doc.Project.Fps,
+        PngSequenceExporter.ExportRendered(rendered, pngDir, overwrite: true);
+        GifExporter.ExportRendered(rendered, _doc.Project.Fps, Path.Combine(dir, "combo.gif"), loop: true, overwrite: true);
+        SpriteSheetExporter.Export(rendered, _seqResolved, _doc.Project.Fps,
             Path.Combine(dir, "sheet.png"), Path.Combine(dir, "sheet.json"),
             columns: 8, padding: 2, overwrite: true);
         await Task.CompletedTask;
+    }
+
+    /// <summary>Locally generated demo assets: shockwave ring + test tone.</summary>
+    private static void GenerateEvidenceAssets(string dir, out string fxPath, out string wavPath)
+    {
+        Directory.CreateDirectory(dir);
+        fxPath = Path.Combine(dir, "evidence-shockwave.png");
+        using (var bmp = new SkiaSharp.SKBitmap(96, 96, SkiaSharp.SKColorType.Rgba8888, SkiaSharp.SKAlphaType.Premul))
+        using (var canvas = new SkiaSharp.SKCanvas(bmp))
+        {
+            canvas.Clear(SkiaSharp.SKColors.Transparent);
+            using var paint = new SkiaSharp.SKPaint
+            {
+                Style = SkiaSharp.SKPaintStyle.Stroke,
+                StrokeWidth = 6,
+                Color = new SkiaSharp.SKColor(255, 220, 150, 255),
+                IsAntialias = true,
+            };
+            canvas.DrawCircle(48, 48, 34, paint);
+            using var soft = new SkiaSharp.SKPaint
+            {
+                Style = SkiaSharp.SKPaintStyle.Stroke,
+                StrokeWidth = 14,
+                Color = new SkiaSharp.SKColor(255, 200, 120, 70),
+                IsAntialias = true,
+            };
+            canvas.DrawCircle(48, 48, 34, soft);
+            using var img = SkiaSharp.SKImage.FromBitmap(bmp);
+            using var data = img.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+            File.WriteAllBytes(fxPath, data.ToArray());
+        }
+
+        wavPath = Path.Combine(dir, "evidence-tone.wav");
+        const int rate = 44100;
+        const double seconds = 1.0;
+        int samples = (int)(rate * seconds);
+        using var stream = File.Create(wavPath);
+        using var writer = new System.IO.BinaryWriter(stream);
+        int dataBytes = samples * 2;
+        writer.Write(System.Text.Encoding.ASCII.GetBytes("RIFF"));
+        writer.Write(36 + dataBytes);
+        writer.Write(System.Text.Encoding.ASCII.GetBytes("WAVE"));
+        writer.Write(System.Text.Encoding.ASCII.GetBytes("fmt "));
+        writer.Write(16);
+        writer.Write((short)1);
+        writer.Write((short)1);
+        writer.Write(rate);
+        writer.Write(rate * 2);
+        writer.Write((short)2);
+        writer.Write((short)16);
+        writer.Write(System.Text.Encoding.ASCII.GetBytes("data"));
+        writer.Write(dataBytes);
+        for (int i = 0; i < samples; i++)
+        {
+            double t = (double)i / rate;
+            double env = Math.Min(1.0, t * 20) * Math.Max(0.0, 1.0 - t / seconds);
+            short s = (short)(Math.Sin(2 * Math.PI * 880 * t) * 9000 * env);
+            writer.Write(s);
+        }
     }
 
     private async Task MaybeRunEvidenceModeAsync()

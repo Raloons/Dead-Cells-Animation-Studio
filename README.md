@@ -45,7 +45,38 @@ Evidence capture (used for the screenshots above):
 dotnet run --project src/DcAnim.App -- --evidence <output-dir>
 ```
 
-## What works (AS-M3 sequencing editor)
+## What works (AS-M4 authoring)
+
+- Everything from AS-M3, plus non-destructive transforms (position, scale,
+  rotation, opacity, pivot, flips) with Hold/Linear keyframes per clip.
+- Effect overlays (transparent PNGs, layers, keyframed transforms) and a WAV
+  audio track (waveform, trim, volume, mute, synchronized preview).
+- Timeline: animation + effect + audio lanes, keyframe diamonds, drag-move,
+  drop-to-insert, context menus; viewport drag-to-move with selection overlay.
+- Undo/redo across all edits (Ctrl+Z/Y), dirty tracking, safe save prompts.
+- `.dcanim` v2 projects (backward compatible with v1); rendered PNG/GIF/
+  sprite-sheet exports that match the editor frame-for-frame.
+- 121 automated tests green, including timing, compositing, undo, migration,
+  and export-decoding tests.
+
+![AS-M4 authoring workspace](docs/evidence/as-m4-sequence.png)
+
+### Authoring tutorial (Katana Combo)
+
+1. File > Open res.pak… (or auto-detect), switch to **Sequence**, File > New.
+2. Drag `AtkKatanaA`, `AtkKatanaB2`, `AtkKatanaB3`, `AtkKatanaB4` onto the
+   timeline in order; set B3 to 0.5×, B4 to 1.25× in the inspector.
+3. Select the B2 clip: in TRANSFORM set keyframes — X 0→12 (frames 0→5),
+   ScaleX 1→1.5→1 (frames 0/5/10, Linear).
+4. File > Add effect image… (any transparent PNG), drag it to the B2 strike
+   (frame 26), keyframe Scale 0.2→1.6 and Opacity 1→0 over its 12 frames.
+5. File > Add audio (WAV)…, place at 0.5 s, press Space to preview with sound.
+6. Ctrl+Z / Ctrl+Y to undo/redo; Ctrl+S to save `katana-combo.dcanim`.
+7. Reopen the file, then File > Export sequence for PNG, GIF, or sheet.
+
+A runnable example ships as `docs/evidence/katana-combo.dcanim` (references
+only; supply your own game files plus the generated demo assets or your own
+effect/audio files with matching names). See `docs/AS-M4-REPORT.md`.
 
 - Viewer mode (native inspection, unchanged) + Sequence mode toggle.
 - Sequence projects (`.dcanim` JSON): ordered clips, per-clip speed

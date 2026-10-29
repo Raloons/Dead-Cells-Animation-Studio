@@ -26,10 +26,10 @@
     <Border BorderBrush="{StaticResource WsBorder}" BorderThickness="1" CornerRadius="4"
             Background="{StaticResource WsTrackBackground}">
       <ScrollViewer x:Name="TrackScroll" HorizontalScrollBarVisibility="Auto"
-                    VerticalScrollBarVisibility="Disabled" Padding="0">
+                    VerticalScrollBarVisibility="Auto" Padding="0">
         <Grid>
           <controls:TrackControl x:Name="Track" Height="92"/>
-          <controls:SequenceTrackControl x:Name="SeqTrack" Height="100" IsVisible="False"/>
+          <controls:SequenceTrackControl x:Name="SeqTrack" Height="184" IsVisible="False"/>
         </Grid>
       </ScrollViewer>
     </Border>

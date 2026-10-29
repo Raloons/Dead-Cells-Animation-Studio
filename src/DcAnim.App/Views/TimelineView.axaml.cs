@@ -3,6 +3,7 @@ using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using DcAnim.App.Controls;
 using DcAnim.Core.Playback;
+using DcAnim.Core.Sequence;
 
 namespace DcAnim.App.Views;
 
@@ -21,6 +22,16 @@ public sealed partial class TimelineView : UserControl
     public event Action<string>? SeqRemoveRequested;
     public event Action<string>? SeqDuplicateRequested;
     public event Action<string, double>? SeqSpeedRequested;
+    public event Action<string>? SeqEffectSelected;
+    public event Action<string, int>? SeqEffectMoved;
+    public event Action<string>? SeqEffectRemoveRequested;
+    public event Action<string>? SeqAudioSelected;
+    public event Action<string, double>? SeqAudioMoved;
+    public event Action<string>? SeqAudioRemoveRequested;
+    public event Action<TransformProperty, int, bool>? SeqKeyframeSelected;
+    public event Action<TransformProperty, int, int, bool>? SeqKeyframeMoved;
+    public event Action? SeqKeyframeDragStarted;
+    public event Action? SeqKeyframeDragFinished;
 
     public bool IsSequenceMode { get; private set; }
 
@@ -34,6 +45,16 @@ public sealed partial class TimelineView : UserControl
         SeqTrack.RemoveRequested += id => SeqRemoveRequested?.Invoke(id);
         SeqTrack.DuplicateRequested += id => SeqDuplicateRequested?.Invoke(id);
         SeqTrack.SpeedRequested += (id, s) => SeqSpeedRequested?.Invoke(id, s);
+        SeqTrack.EffectSelected += id => SeqEffectSelected?.Invoke(id);
+        SeqTrack.EffectMoved += (id, f) => SeqEffectMoved?.Invoke(id, f);
+        SeqTrack.EffectRemoveRequested += id => SeqEffectRemoveRequested?.Invoke(id);
+        SeqTrack.AudioSelected += id => SeqAudioSelected?.Invoke(id);
+        SeqTrack.AudioMoved += (id, t) => SeqAudioMoved?.Invoke(id, t);
+        SeqTrack.AudioRemoveRequested += id => SeqAudioRemoveRequested?.Invoke(id);
+        SeqTrack.KeyframeSelected += (p, f, fx) => SeqKeyframeSelected?.Invoke(p, f, fx);
+        SeqTrack.KeyframeMoved += (p, a, b, fx) => SeqKeyframeMoved?.Invoke(p, a, b, fx);
+        SeqTrack.KeyframeDragStarted += () => SeqKeyframeDragStarted?.Invoke();
+        SeqTrack.KeyframeDragFinished += () => SeqKeyframeDragFinished?.Invoke();
         ZoomSlider.ValueChanged += (_, _) =>
         {
             if (!_settingZoom)
@@ -131,12 +152,26 @@ public sealed partial class TimelineView : UserControl
 
     public void SetSequenceData(
         IList<SequenceTrackControl.ClipBlock>? blocks,
-        string? selectedClipId,
+        IList<SequenceTrackControl.FxBlock>? effects,
+        IList<SequenceTrackControl.AudioBlock>? audio,
+        string? selectedClip,
+        string? selectedEffect,
+        string? selectedAudio,
+        IList<SequenceTrackControl.KeyMarker>? keys,
+        SequenceTrackControl.KeyMarker? selectedKey,
+        bool showEffectKeys,
         int currentFrame,
         double fps)
     {
         SeqTrack.Clips = blocks;
-        SeqTrack.SelectedClipId = selectedClipId;
+        SeqTrack.Effects = effects;
+        SeqTrack.Audio = audio;
+        SeqTrack.SelectedClipId = selectedClip;
+        SeqTrack.SelectedEffectId = selectedEffect;
+        SeqTrack.SelectedAudioId = selectedAudio;
+        SeqTrack.Keyframes = keys;
+        SeqTrack.SelectedKey = selectedKey;
+        SeqTrack.ShowEffectKeys = showEffectKeys;
         SeqTrack.CurrentFrame = currentFrame;
         SeqTrack.Fps = fps;
         _timelineUserZoomed = false;
