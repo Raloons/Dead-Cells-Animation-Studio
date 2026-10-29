@@ -1,0 +1,53 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DcAnim.App.Views.AnimationInspectorView">
+  <ScrollViewer>
+    <StackPanel Spacing="8">
+      <Expander IsExpanded="True" HorizontalAlignment="Stretch">
+        <Expander.Header>
+          <TextBlock Text="ANIMATION" Classes="ws-panel-header" Margin="0"/>
+        </Expander.Header>
+        <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="ID" Classes="ws-prop-label"/>
+          <TextBlock Grid.Row="0" Grid.Column="1" x:Name="InspId" Classes="ws-prop-value" Text="—"/>
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="Frames" Classes="ws-prop-label"/>
+          <TextBlock Grid.Row="1" Grid.Column="1" x:Name="InspFrames" Classes="ws-prop-value" Text="—"/>
+          <TextBlock Grid.Row="2" Grid.Column="0" Text="Duration" Classes="ws-prop-label"/>
+          <TextBlock Grid.Row="2" Grid.Column="1" x:Name="InspDuration" Classes="ws-prop-value" Text="—"/>
+          <TextBlock Grid.Row="3" Grid.Column="0" Text="Current" Classes="ws-prop-label"/>
+          <TextBlock Grid.Row="3" Grid.Column="1" x:Name="InspCurrent" Classes="ws-prop-value" Text="—"/>
+        </Grid>
+      </Expander>
+
+      <Expander IsExpanded="True" HorizontalAlignment="Stretch">
+        <Expander.Header>
+          <TextBlock Text="TIMING" Classes="ws-panel-header" Margin="0"/>
+        </Expander.Header>
+        <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="FPS" Classes="ws-prop-label"/>
+          <TextBlock Grid.Row="0" Grid.Column="1" x:Name="InspFps" Classes="ws-prop-value" Text="—"/>
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="Hit frame" Classes="ws-prop-label"/>
+          <TextBlock Grid.Row="1" Grid.Column="1" x:Name="InspHit" Classes="ws-prop-value" Text="—"/>
+          <TextBlock Grid.Row="2" Grid.Column="0" Text="Charge" Classes="ws-prop-label"/>
+          <TextBlock Grid.Row="2" Grid.Column="1" x:Name="InspCharge" Classes="ws-prop-value" Text="—"/>
+          <TextBlock Grid.Row="3" Grid.Column="0" Text="FX" Classes="ws-prop-label"/>
+          <TextBlock Grid.Row="3" Grid.Column="1" x:Name="InspFx" Classes="ws-prop-value" Text="—"/>
+          <TextBlock Grid.Row="4" Grid.Column="0" Text="Timing note" Classes="ws-prop-label"/>
+          <TextBlock Grid.Row="4" Grid.Column="1" x:Name="InspTimingSrc" Classes="ws-prop-value" FontSize="12" Text="—"/>
+        </Grid>
+      </Expander>
+
+      <Expander IsExpanded="False" HorizontalAlignment="Stretch">
+        <Expander.Header>
+          <TextBlock Text="SOURCE" Classes="ws-panel-header" Margin="0"/>
+        </Expander.Header>
+        <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="Atlas" Classes="ws-prop-label"/>
+          <TextBlock Grid.Row="0" Grid.Column="1" x:Name="InspAtlas" Classes="ws-prop-value" FontSize="12" Text="—"/>
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="Canvas" Classes="ws-prop-label"/>
+          <TextBlock Grid.Row="1" Grid.Column="1" x:Name="InspCanvas" Classes="ws-prop-value" Text="—"/>
+        </Grid>
+      </Expander>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

@@ -1,0 +1,39 @@
+<!-- Shared workspace design tokens: charcoal surfaces, restrained violet accent. -->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- Surfaces -->
+  <Color x:Key="WsAppBackground">#0E0E12</Color>
+  <Color x:Key="WsPanelBackground">#16161C</Color>
+  <Color x:Key="WsPanelAltBackground">#101016</Color>
+  <Color x:Key="WsTrackBackground">#14141A</Color>
+  <Color x:Key="WsControlBackground">#1E1E26</Color>
+  <Color x:Key="WsHoverBackground">#26262F</Color>
+  <Color x:Key="WsSelectedBackground">#2A2440</Color>
+
+  <!-- Borders -->
+  <Color x:Key="WsBorder">#26262F</Color>
+  <Color x:Key="WsBorderStrong">#34343F</Color>
+
+  <!-- Text -->
+  <Color x:Key="WsTextPrimary">#EDEDF2</Color>
+  <Color x:Key="WsTextSecondary">#A7A7B5</Color>
+  <Color x:Key="WsTextMuted">#71717E</Color>
+
+  <!-- Accent (violet) + semantics -->
+  <Color x:Key="WsAccent">#8B5CF6</Color>
+  <Color x:Key="WsAccentHover">#A78BFA</Color>
+  <Color x:Key="WsAccentDim">#3B2F66</Color>
+  <Color x:Key="WsHit">#F59E0B</Color>
+  <Color x:Key="WsPlayhead">#FFFFFF</Color>
+
+  <!-- Metrics -->
+  <CornerRadius x:Key="WsCornerSmall">4</CornerRadius>
+  <CornerRadius x:Key="WsCornerMedium">6</CornerRadius>
+  <x:Double x:Key="WsPanelPadding">10</x:Double>
+  <x:Double x:Key="WsHeaderFontSize">11</x:Double>
+  <x:Double x:Key="WsBodyFontSize">12</x:Double>
+  <x:Double x:Key="WsValueFontSize">13</x:Double>
+  <x:Double x:Key="WsTransportButtonSize">34</x:Double>
+  <x:Double x:Key="WsIconSize">16</x:Double>
+</ResourceDictionary>

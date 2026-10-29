@@ -1,108 +1,120 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:controls="clr-namespace:DcAnim.App.Controls"
+        xmlns:views="clr-namespace:DcAnim.App.Views"
         x:Class="DcAnim.App.MainWindow"
         Title="Dead Cells Animation Studio"
-        Width="1280" Height="800" MinWidth="960" MinHeight="600">
-  <DockPanel>
-    <Menu DockPanel.Dock="Top">
-      <MenuItem Header="_File">
-        <MenuItem x:Name="OpenPakItem" Header="Open res.pak…"/>
-        <MenuItem x:Name="OpenAtlasItem" Header="Open extracted atlas folder…"/>
-        <Separator/>
-        <MenuItem x:Name="ReloadItem" Header="Reload"/>
-        <Separator/>
-        <MenuItem x:Name="ExitItem" Header="Exit"/>
-      </MenuItem>
-      <MenuItem Header="_Help">
-        <MenuItem x:Name="AboutItem" Header="About"/>
-      </MenuItem>
-    </Menu>
+        Width="1400" Height="880" MinWidth="1024" MinHeight="640">
 
-    <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="#2A2A35" Background="#17171D" Padding="8,4">
-      <TextBlock x:Name="StatusText" Text="Starting…" FontSize="12" Foreground="#9C9CA8"/>
+  <DockPanel Background="{StaticResource WsAppBackground}">
+    <!-- Top application bar -->
+    <Border DockPanel.Dock="Top" Background="{StaticResource WsPanelBackground}"
+            BorderBrush="{StaticResource WsBorder}" BorderThickness="0,0,0,1">
+      <DockPanel Margin="10,4">
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <Border Width="10" Height="10" CornerRadius="5" Background="{StaticResource WsAccent}"
+                  VerticalAlignment="Center"/>
+          <TextBlock Text="Dead Cells Animation Studio" FontSize="13" FontWeight="SemiBold"
+                     Foreground="{StaticResource WsTextPrimary}" VerticalAlignment="Center"/>
+          <Menu VerticalAlignment="Center">
+            <MenuItem Header="_File">
+              <MenuItem x:Name="OpenPakItem" Header="Open res.pak…" InputGesture="Ctrl+O"/>
+              <MenuItem x:Name="OpenAtlasItem" Header="Open extracted atlas folder…"/>
+              <Separator/>
+              <MenuItem x:Name="ReloadItem" Header="Reload source" InputGesture="F5"/>
+              <Separator/>
+              <MenuItem x:Name="ExitItem" Header="Exit" InputGesture="Alt+F4"/>
+            </MenuItem>
+            <MenuItem Header="_Edit">
+              <MenuItem x:Name="PlayPauseItem" Header="Play / pause" InputGesture="Space"/>
+              <MenuItem x:Name="PrevFrameItem" Header="Previous frame" InputGesture="Left"/>
+              <MenuItem x:Name="NextFrameItem" Header="Next frame" InputGesture="Right"/>
+              <MenuItem x:Name="FirstFrameItem" Header="First frame" InputGesture="Home"/>
+              <MenuItem x:Name="LastFrameItem" Header="Last frame" InputGesture="End"/>
+            </MenuItem>
+            <MenuItem Header="_View">
+              <MenuItem x:Name="CheckerItem" Header="Checkerboard background" InputGesture="Ctrl+B"
+                        ToggleType="CheckBox" IsChecked="True"/>
+              <MenuItem x:Name="FitItem" Header="Fit preview to view" InputGesture="Ctrl+0"/>
+              <MenuItem x:Name="TimelineZoomInItem" Header="Timeline zoom in"/>
+              <MenuItem x:Name="TimelineZoomOutItem" Header="Timeline zoom out"/>
+              <Separator/>
+              <MenuItem x:Name="ResetLayoutItem" Header="Reset workspace layout"/>
+            </MenuItem>
+            <MenuItem Header="_Help">
+              <MenuItem x:Name="FormatNotesItem" Header="Native format notes"/>
+              <MenuItem x:Name="AboutItem" Header="About"/>
+            </MenuItem>
+          </Menu>
+        </StackPanel>
+        <TextBlock DockPanel.Dock="Right" x:Name="SourceText" FontSize="11"
+                   Foreground="{StaticResource WsTextMuted}" VerticalAlignment="Center"
+                   Text="No source"/>
+      </DockPanel>
     </Border>
 
-    <Grid ColumnDefinitions="264,*,300" RowDefinitions="*,150">
-      <!-- Left: asset browser -->
-      <Border Grid.Row="0" Grid.Column="0" BorderThickness="0,0,1,0" BorderBrush="#2A2A35" Background="#1B1B22">
-        <DockPanel Margin="8">
-          <TextBlock DockPanel.Dock="Top" Text="ASSET BROWSER" FontSize="11" Foreground="#8B8B98" Margin="0,0,0,6"/>
-          <TextBox DockPanel.Dock="Top" x:Name="SearchBox" Watermark="Search animation ID…" Margin="0,0,0,6"/>
-          <TextBlock DockPanel.Dock="Top" x:Name="CatalogCount" Text="" FontSize="11" Foreground="#8B8B98" Margin="0,0,0,6"/>
-          <ListBox x:Name="AnimationList" Background="#141419"/>
-        </DockPanel>
-      </Border>
-
-      <!-- Center: preview + transport -->
-      <DockPanel Grid.Row="0" Grid.Column="1" Background="#101016">
-        <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="#2A2A35" Background="#17171D" Padding="8">
-          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" VerticalAlignment="Center">
-            <Button x:Name="RestartButton" Content="⏮" Width="40" ToolTip.Tip="Restart"/>
-            <Button x:Name="PrevButton" Content="◀" Width="40" ToolTip.Tip="Previous frame"/>
-            <Button x:Name="PlayButton" Content="▶" Width="56" ToolTip.Tip="Play / pause"/>
-            <Button x:Name="NextButton" Content="▶|" Width="40" ToolTip.Tip="Next frame"/>
-            <CheckBox x:Name="LoopCheck" Content="Loop" IsChecked="True" VerticalAlignment="Center" Margin="8,0,0,0"/>
-            <TextBlock Text="Speed" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="#9C9CA8"/>
-            <ComboBox x:Name="SpeedBox" Width="76" SelectedIndex="2">
-              <ComboBoxItem Content="0.25x" Tag="0.25"/>
-              <ComboBoxItem Content="0.5x" Tag="0.5"/>
-              <ComboBoxItem Content="1x" Tag="1"/>
-              <ComboBoxItem Content="2x" Tag="2"/>
-              <ComboBoxItem Content="4x" Tag="4"/>
-            </ComboBox>
-            <TextBlock Text="FPS" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="#9C9CA8"/>
-            <ComboBox x:Name="FpsBox" Width="70" SelectedIndex="3">
-              <ComboBoxItem Content="12" Tag="12"/>
-              <ComboBoxItem Content="15" Tag="15"/>
-              <ComboBoxItem Content="24" Tag="24"/>
-              <ComboBoxItem Content="30" Tag="30"/>
-              <ComboBoxItem Content="60" Tag="60"/>
-            </ComboBox>
-            <TextBlock Text="Zoom" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="#9C9CA8"/>
-            <Slider x:Name="ZoomSlider" Minimum="1" Maximum="8" Value="3" Width="110" VerticalAlignment="Center"/>
-          </StackPanel>
-        </Border>
-        <controls:PreviewControl x:Name="Preview" Margin="8"/>
+    <!-- Status bar -->
+    <Border DockPanel.Dock="Bottom" Background="{StaticResource WsPanelBackground}"
+            BorderBrush="{StaticResource WsBorder}" BorderThickness="0,1,0,0" Padding="10,5">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Right" x:Name="HintsText" FontSize="11"
+                   Foreground="{StaticResource WsTextMuted}"
+                   Text="Space play · ←/→ frame · Home/End ends · Ctrl+F search · Ctrl+0 fit"/>
+        <TextBlock x:Name="StatusText" FontSize="11" Foreground="{StaticResource WsTextSecondary}"
+                   Text="Starting…" TextTrimming="CharacterEllipsis"/>
       </DockPanel>
+    </Border>
 
-      <!-- Right: inspector -->
-      <Border Grid.Row="0" Grid.Column="2" BorderThickness="1,0,0,0" BorderBrush="#2A2A35" Background="#1B1B22">
-        <ScrollViewer>
-          <StackPanel Margin="10" Spacing="4">
-            <TextBlock Text="INSPECTOR" FontSize="11" Foreground="#8B8B98" Margin="0,0,0,4"/>
-            <TextBlock Text="Animation ID" FontSize="11" Foreground="#8B8B98"/>
-            <TextBlock x:Name="InspId" Text="—" FontSize="14"/>
-            <TextBlock Text="Frames" FontSize="11" Foreground="#8B8B98" Margin="0,6,0,0"/>
-            <TextBlock x:Name="InspFrames" Text="—" FontSize="14"/>
-            <TextBlock Text="Duration (s)" FontSize="11" Foreground="#8B8B98" Margin="0,6,0,0"/>
-            <TextBlock x:Name="InspDuration" Text="—" FontSize="14"/>
-            <TextBlock Text="Current frame" FontSize="11" Foreground="#8B8B98" Margin="0,6,0,0"/>
-            <TextBlock x:Name="InspCurrent" Text="—" FontSize="14"/>
-            <TextBlock Text="Hit frame" FontSize="11" Foreground="#8B8B98" Margin="0,6,0,0"/>
-            <TextBlock x:Name="InspHit" Text="—" FontSize="14"/>
-            <TextBlock Text="Charge (s)" FontSize="11" Foreground="#8B8B98" Margin="0,6,0,0"/>
-            <TextBlock x:Name="InspCharge" Text="—" FontSize="14"/>
-            <TextBlock Text="FX ID" FontSize="11" Foreground="#8B8B98" Margin="0,6,0,0"/>
-            <TextBlock x:Name="InspFx" Text="—" FontSize="14"/>
-            <TextBlock Text="Timing source" FontSize="11" Foreground="#8B8B98" Margin="0,6,0,0"/>
-            <TextBlock x:Name="InspTimingSrc" Text="—" FontSize="12" TextWrapping="Wrap"/>
-            <TextBlock Text="Source asset" FontSize="11" Foreground="#8B8B98" Margin="0,6,0,0"/>
-            <TextBlock x:Name="InspSource" Text="—" FontSize="12" TextWrapping="Wrap"/>
-          </StackPanel>
-        </ScrollViewer>
-      </Border>
+    <!-- Workspace -->
+    <Grid RowDefinitions="*,5,Auto">
+      <Grid Grid.Row="0" x:Name="MainGrid">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="300" MinWidth="200" MaxWidth="560"/>
+          <ColumnDefinition Width="5"/>
+          <ColumnDefinition Width="*" MinWidth="300"/>
+          <ColumnDefinition Width="5"/>
+          <ColumnDefinition Width="300" MinWidth="220" MaxWidth="560"/>
+        </Grid.ColumnDefinitions>
+        <Border Grid.Column="0" Background="{StaticResource WsPanelBackground}"
+                BorderBrush="{StaticResource WsBorder}" BorderThickness="0,0,1,0" Padding="10">
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Top" Text="LIBRARY" Classes="ws-panel-header"/>
+            <views:AssetBrowserView x:Name="Browser"/>
+          </DockPanel>
+        </Border>
 
-      <!-- Bottom: timeline -->
-      <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" BorderThickness="0,1,0,0" BorderBrush="#2A2A35" Background="#14141A" Padding="10,6">
-        <DockPanel>
-          <StackPanel DockPanel.Dock="Left" Width="170" Spacing="2" VerticalAlignment="Center">
-            <TextBlock Text="TIMELINE" FontSize="11" Foreground="#8B8B98"/>
-            <TextBlock x:Name="TimelineLabel" Text="—" FontSize="12" Foreground="#CFCFDA"/>
-            <TextBlock Text="Click / drag to scrub" FontSize="11" Foreground="#71717E"/>
-          </StackPanel>
-          <controls:TimelineControl x:Name="Timeline" Margin="8,0,0,0"/>
+        <GridSplitter Grid.Column="1" Width="5" VerticalAlignment="Stretch"
+                      HorizontalAlignment="Center" Background="Transparent"
+                      ResizeBehavior="PreviousAndNext"/>
+
+        <DockPanel Grid.Column="2" Margin="12,10,12,8">
+          <Border DockPanel.Dock="Bottom" Background="{StaticResource WsPanelBackground}"
+                  BorderBrush="{StaticResource WsBorder}" BorderThickness="1" CornerRadius="8"
+                  Padding="8,6" Margin="0,8,0,0" HorizontalAlignment="Center">
+            <views:TransportControl x:Name="Transport"/>
+          </Border>
+          <views:AnimationViewportView x:Name="Viewport"/>
         </DockPanel>
+
+        <GridSplitter Grid.Column="3" Width="5" VerticalAlignment="Stretch"
+                      HorizontalAlignment="Center" Background="Transparent"
+                      ResizeBehavior="PreviousAndNext"/>
+
+        <Border Grid.Column="4" Background="{StaticResource WsPanelBackground}"
+                BorderBrush="{StaticResource WsBorder}" BorderThickness="1,0,0,0" Padding="10">
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Top" Text="INSPECTOR" Classes="ws-panel-header"/>
+            <views:AnimationInspectorView x:Name="Inspector"/>
+          </DockPanel>
+        </Border>
+      </Grid>
+
+      <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
+                    VerticalAlignment="Center" Background="Transparent"
+                    ResizeBehavior="PreviousAndNext"/>
+
+      <Border Grid.Row="2" x:Name="TimelinePanel" MinHeight="140" Background="{StaticResource WsPanelBackground}"
+              BorderBrush="{StaticResource WsBorder}" BorderThickness="0,1,0,0" Padding="12,8" Height="230">
+        <views:TimelineView x:Name="Timeline"/>
       </Border>
     </Grid>
   </DockPanel>

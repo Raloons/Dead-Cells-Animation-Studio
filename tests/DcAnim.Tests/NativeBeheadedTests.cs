@@ -69,6 +69,14 @@ public sealed class NativeBeheadedTests
             Assert.Equal((byte)0, f.Rgba[(4 * 32 + 4) * 4 + 2]);
             Assert.Equal((byte)255, f.Rgba[(4 * 32 + 4) * 4 + 3]);
             Assert.Equal((byte)0, f.Rgba[3]); // top-left transparent
+
+            // Single-frame API must match the equivalent clip frame.
+            var single = loader.LoadFrame("atk", 1, fps: 10.0);
+            var whole = loader.LoadClip("atk", fps: 10.0);
+            Assert.Equal(whole.Frames[1].Rgba, single.Rgba);
+            Assert.Equal(whole.Frames[1].RegionName, single.RegionName);
+            Assert.Throws<ArgumentOutOfRangeException>(() => loader.LoadFrame("atk", 99));
+            Assert.Throws<KeyNotFoundException>(() => loader.LoadFrame("missing", 0));
         }
         finally
         {

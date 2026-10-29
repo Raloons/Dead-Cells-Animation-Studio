@@ -1,0 +1,28 @@
+<!-- Unified monochrome transport/media icon set, 16x16 grid. Original artwork for this project (MIT). -->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- First frame: bar + left triangle -->
+  <StreamGeometry x:Key="IconFirst">M3,2 h2.2 v12 H3 Z M13.5,2 L6.5,8 L13.5,14 Z</StreamGeometry>
+  <!-- Previous frame: bar + left triangle (narrower) -->
+  <StreamGeometry x:Key="IconPrevious">M4,2.5 h1.8 v11 H4 Z M12.5,2.5 L6,8 L12.5,13.5 Z</StreamGeometry>
+  <!-- Play -->
+  <StreamGeometry x:Key="IconPlay">M4.5,2.5 L12.5,8 L4.5,13.5 Z</StreamGeometry>
+  <!-- Pause -->
+  <StreamGeometry x:Key="IconPause">M4,2.5 h3 v11 H4 Z M9,2.5 h3 v11 H9 Z</StreamGeometry>
+  <!-- Next frame -->
+  <StreamGeometry x:Key="IconNext">M3.5,2.5 L10,8 L3.5,13.5 Z M10.2,2.5 H12 v11 h-1.8 Z</StreamGeometry>
+  <!-- Last frame: right triangle + bar -->
+  <StreamGeometry x:Key="IconLast">M2.5,2 L9.5,8 L2.5,14 Z M10.8,2 H13 v12 h-2.2 Z</StreamGeometry>
+
+  <!-- Checkerboard (background toggle): 2x2 cells -->
+  <StreamGeometry x:Key="IconChecker">M2,2 h5 v5 H2 Z M9,2 h5 v5 H9 Z M2,9 h5 v5 H2 Z M9,9 h5 v5 H9 Z</StreamGeometry>
+  <!-- Fit to view: corner brackets -->
+  <StreamGeometry x:Key="IconFit">M2,5.5 V2 H5.5 M10.5,2 H14 V5.5 M14,10.5 V14 H10.5 M5.5,14 H2 V10.5</StreamGeometry>
+  <!-- List view: rows -->
+  <StreamGeometry x:Key="IconList">M2,3.5 h12 v1.8 H2 Z M2,7.1 h12 v1.8 H2 Z M2,10.7 h12 v1.8 H2 Z</StreamGeometry>
+  <!-- Grid view: cells -->
+  <StreamGeometry x:Key="IconGrid">M2,2 h4.4 v4.4 H2 Z M7.4,2 H12 v4.4 H7.4 Z M2,7.4 h4.4 V12 H2 Z M7.4,7.4 H12 V12 H7.4 Z</StreamGeometry>
+  <!-- Filmstrip / frames -->
+  <StreamGeometry x:Key="IconFilm">M2,3 h12 v10 H2 Z M2,3 l2.4,2.4 M2,5.4 L4.4,3 M14,3 l-2.4,2.4 M14,5.4 L11.6,3 M2,13 l2.4,-2.4 M2,10.6 L4.4,13 M14,13 l-2.4,-2.4 M14,10.6 L11.6,13</StreamGeometry>
+</ResourceDictionary>

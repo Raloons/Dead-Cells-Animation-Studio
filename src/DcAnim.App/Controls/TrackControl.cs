@@ -1,0 +1,198 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using DcAnim.Core.Playback;
+
+namespace DcAnim.App.Controls;
+
+/// <summary>
+/// Single-animation filmstrip track: time ruler, frame thumbnails, selected
+/// frame highlight, hit-frame marker, playhead, click/drag scrubbing.
+/// Sized by the host (<see cref="TrackWidth"/>); draws the ruler on top and
+/// the frame lane below. Designed so future multi-clip tracks can reuse it.
+/// </summary>
+public sealed class TrackControl : Control
+{
+    public static readonly StyledProperty<IList<Bitmap>?> FramesProperty =
+        AvaloniaProperty.Register<TrackControl, IList<Bitmap>?>(nameof(Frames));
+
+    public static readonly StyledProperty<int> CurrentFrameProperty =
+        AvaloniaProperty.Register<TrackControl, int>(nameof(CurrentFrame), -1);
+
+    public static readonly StyledProperty<int> HitFrameProperty =
+        AvaloniaProperty.Register<TrackControl, int>(nameof(HitFrame), -1);
+
+    public static readonly StyledProperty<double> PixelsPerFrameProperty =
+        AvaloniaProperty.Register<TrackControl, double>(nameof(PixelsPerFrame), 32.0);
+
+    public static readonly StyledProperty<double> FpsProperty =
+        AvaloniaProperty.Register<TrackControl, double>(nameof(Fps), 30.0);
+
+    public const double RulerHeight = 30.0;
+    public const double LaneHeight = 68.0;
+    public const double LaneTop = RulerHeight + 4;
+
+    private static readonly IBrush RulerBrush = new SolidColorBrush(Color.FromRgb(0x1B, 0x1B, 0x23));
+    private static readonly IBrush CellBrush = new SolidColorBrush(Color.FromRgb(0x2A, 0x2A, 0x36));
+    private static readonly IBrush PlayedBrush = new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x48));
+    private static readonly IBrush CurrentBrush = new SolidColorBrush(Color.FromRgb(0x8B, 0x5C, 0xF6));
+    private static readonly IBrush HitBrush = new SolidColorBrush(Color.FromRgb(0xF5, 0x9E, 0x0B));
+    private static readonly IBrush TickBrush = new SolidColorBrush(Color.FromRgb(0x4A, 0x4A, 0x58));
+    private static readonly IBrush TextBrush = new SolidColorBrush(Color.FromRgb(0xA7, 0xA7, 0xB5));
+    private static readonly IPen PlayheadPen = new Pen(new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), 2);
+
+    private bool _scrubbing;
+
+    static TrackControl()
+    {
+        AffectsRender<TrackControl>(FramesProperty, CurrentFrameProperty, HitFrameProperty, PixelsPerFrameProperty, FpsProperty);
+    }
+
+    /// <summary>Raised with the scrub fraction in [0,1].</summary>
+    public event Action<double>? ScrubRequested;
+
+    public IList<Bitmap>? Frames
+    {
+        get => GetValue(FramesProperty);
+        set => SetValue(FramesProperty, value);
+    }
+
+    public int CurrentFrame
+    {
+        get => GetValue(CurrentFrameProperty);
+        set => SetValue(CurrentFrameProperty, value);
+    }
+
+    public int HitFrame
+    {
+        get => GetValue(HitFrameProperty);
+        set => SetValue(HitFrameProperty, value);
+    }
+
+    public double PixelsPerFrame
+    {
+        get => GetValue(PixelsPerFrameProperty);
+        set => SetValue(PixelsPerFrameProperty, Math.Clamp(value, 8.0, 96.0));
+    }
+
+    public double Fps
+    {
+        get => GetValue(FpsProperty);
+        set => SetValue(FpsProperty, value > 0 ? value : 30.0);
+    }
+
+    public int FrameCount => Frames?.Count ?? 0;
+
+    public double TrackWidth => TimelineMath.TrackWidth(FrameCount, PixelsPerFrame) + 8;
+
+    public override void Render(DrawingContext context)
+    {
+        var frames = Frames;
+        double ppf = PixelsPerFrame;
+        int n = FrameCount;
+
+        context.FillRectangle(RulerBrush, new Rect(0, 0, Math.Max(Bounds.Width, TrackWidth), RulerHeight));
+
+        if (n <= 0)
+        {
+            var empty = new FormattedText("No frames — select an animation",
+                System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                Typeface.Default, 12, TextBrush);
+            context.DrawText(empty, new Point(8, RulerHeight + (LaneHeight - empty.Height) / 2));
+            return;
+        }
+
+        // Ruler ticks + labels.
+        int every = TimelineMath.LabelEvery(n, ppf);
+        for (int i = 0; i < n; i++)
+        {
+            double x = 4 + TimelineMath.XForFrame(i, ppf);
+            bool labeled = i % every == 0;
+            double tickTop = labeled ? 8 : 18;
+            context.FillRectangle(TickBrush, new Rect(x + ppf / 2 - 0.5, tickTop, 1, RulerHeight - tickTop - 2));
+            if (labeled)
+            {
+                var label = new FormattedText($"{i} · {TimelineMath.FormatTime(i, Fps)}",
+                    System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                    Typeface.Default, 10, TextBrush);
+                context.DrawText(label, new Point(x + 3, 6));
+            }
+            // Frame boundary.
+            context.FillRectangle(TickBrush, new Rect(x - 0.5, LaneTop, 1, LaneHeight));
+        }
+        context.FillRectangle(TickBrush, new Rect(4 + n * ppf - 0.5, LaneTop, 1, LaneHeight));
+
+        // Frame cells with thumbnails.
+        for (int i = 0; i < n; i++)
+        {
+            double x = 4 + TimelineMath.XForFrame(i, ppf);
+            var cell = new Rect(x + 1, LaneTop + 1, Math.Max(1, ppf - 2), LaneHeight - 2);
+            var brush = i == CurrentFrame ? CurrentBrush : i < CurrentFrame ? PlayedBrush : CellBrush;
+            context.FillRectangle(brush, cell);
+
+            if (frames is not null && (uint)i < (uint)frames.Count && frames[i] is { } thumb)
+            {
+                double tw = Math.Min(cell.Width - 4, cell.Height - 4);
+                var dest = new Rect(cell.Center.X - tw / 2, cell.Center.Y - tw / 2, tw, tw);
+                context.DrawImage(thumb, new Rect(0, 0, thumb.PixelSize.Width, thumb.PixelSize.Height), dest);
+            }
+
+            if (i == CurrentFrame)
+            {
+                context.DrawRectangle(new Pen(CurrentBrush, 2), new Rect(x, LaneTop, ppf, LaneHeight));
+            }
+            if (i == HitFrame)
+            {
+                context.FillRectangle(HitBrush, new Rect(x + 1, LaneTop + 1, Math.Max(1, ppf - 2), 4));
+            }
+        }
+
+        // Playhead.
+        if (CurrentFrame >= 0)
+        {
+            double x = 4 + TimelineMath.XForFrame(CurrentFrame, ppf) + ppf / 2;
+            context.DrawLine(PlayheadPen, new Point(x, 2), new Point(x, LaneTop + LaneHeight));
+            var cap = new StreamGeometry();
+            using (var capCtx = cap.Open())
+            {
+                capCtx.BeginFigure(new Point(x - 5, 0), true);
+                capCtx.LineTo(new Point(x + 5, 0));
+                capCtx.LineTo(new Point(x, 7));
+                capCtx.EndFigure(true);
+            }
+            context.DrawGeometry(Brushes.White, null, cap);
+        }
+    }
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        if (FrameCount <= 0)
+            return;
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            _scrubbing = true;
+            e.Pointer.Capture(this);
+            ScrubTo(e.GetPosition(this).X - 4);
+            e.Handled = true;
+        }
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        if (_scrubbing && FrameCount > 0)
+            ScrubTo(e.GetPosition(this).X - 4);
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        _scrubbing = false;
+    }
+
+    private void ScrubTo(double x) =>
+        ScrubRequested?.Invoke(TimelineMath.FractionAtX(x, FrameCount, PixelsPerFrame));
+}

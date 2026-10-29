@@ -1,0 +1,111 @@
+<!-- Workspace control styles. Included after FluentTheme so they take precedence. -->
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- Panel header label -->
+  <Style Selector="TextBlock.ws-panel-header">
+    <Setter Property="FontSize" Value="{StaticResource WsHeaderFontSize}"/>
+    <Setter Property="Foreground" Value="{StaticResource WsTextMuted}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Margin" Value="0,0,0,6"/>
+  </Style>
+
+  <!-- Property label / value -->
+  <Style Selector="TextBlock.ws-prop-label">
+    <Setter Property="FontSize" Value="{StaticResource WsBodyFontSize}"/>
+    <Setter Property="Foreground" Value="{StaticResource WsTextMuted}"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+  </Style>
+  <Style Selector="TextBlock.ws-prop-value">
+    <Setter Property="FontSize" Value="{StaticResource WsValueFontSize}"/>
+    <Setter Property="Foreground" Value="{StaticResource WsTextPrimary}"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+    <Setter Property="TextWrapping" Value="Wrap"/>
+  </Style>
+
+  <!-- Transport icon buttons: uniform 34px, monochrome glyph, violet primary -->
+  <Style Selector="Button.ws-transport">
+    <Setter Property="Width" Value="{StaticResource WsTransportButtonSize}"/>
+    <Setter Property="Height" Value="{StaticResource WsTransportButtonSize}"/>
+    <Setter Property="Padding" Value="0"/>
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="BorderBrush" Value="Transparent"/>
+    <Setter Property="CornerRadius" Value="{StaticResource WsCornerMedium}"/>
+    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+    <Setter Property="VerticalContentAlignment" Value="Center"/>
+  </Style>
+  <Style Selector="Button.ws-transport:pointerover">
+    <Setter Property="Background" Value="{StaticResource WsHoverBackground}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource WsBorderStrong}"/>
+  </Style>
+  <Style Selector="Button.ws-transport:pressed">
+    <Setter Property="Background" Value="{StaticResource WsSelectedBackground}"/>
+  </Style>
+  <Style Selector="Button.ws-transport:disabled">
+    <Setter Property="Opacity" Value="0.35"/>
+  </Style>
+  <Style Selector="Button.ws-transport-primary">
+    <Setter Property="Background" Value="{StaticResource WsAccent}"/>
+  </Style>
+  <Style Selector="Button.ws-transport-primary:pointerover">
+    <Setter Property="Background" Value="{StaticResource WsAccentHover}"/>
+  </Style>
+
+  <!-- Small toolbar buttons -->
+  <Style Selector="Button.ws-tool">
+    <Setter Property="Height" Value="28"/>
+    <Setter Property="MinWidth" Value="28"/>
+    <Setter Property="Padding" Value="6,0"/>
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="BorderBrush" Value="Transparent"/>
+    <Setter Property="CornerRadius" Value="{StaticResource WsCornerSmall}"/>
+    <Setter Property="FontSize" Value="{StaticResource WsBodyFontSize}"/>
+  </Style>
+  <Style Selector="Button.ws-tool:pointerover">
+    <Setter Property="Background" Value="{StaticResource WsHoverBackground}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource WsBorderStrong}"/>
+  </Style>
+  <Style Selector="Button.ws-tool:pressed">
+    <Setter Property="Background" Value="{StaticResource WsSelectedBackground}"/>
+  </Style>
+  <Style Selector="ToggleButton.ws-tool">
+    <Setter Property="Height" Value="28"/>
+    <Setter Property="MinWidth" Value="28"/>
+    <Setter Property="Padding" Value="6,0"/>
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="BorderBrush" Value="Transparent"/>
+    <Setter Property="CornerRadius" Value="{StaticResource WsCornerSmall}"/>
+  </Style>
+  <Style Selector="ToggleButton.ws-tool:pointerover">
+    <Setter Property="Background" Value="{StaticResource WsHoverBackground}"/>
+  </Style>
+  <Style Selector="ToggleButton.ws-tool:checked">
+    <Setter Property="Background" Value="{StaticResource WsSelectedBackground}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource WsAccent}"/>
+  </Style>
+
+  <!-- Category pills -->
+  <Style Selector="ToggleButton.ws-category">
+    <Setter Property="Height" Value="26"/>
+    <Setter Property="Padding" Value="10,0"/>
+    <Setter Property="Margin" Value="0,0,4,4"/>
+    <Setter Property="Background" Value="{StaticResource WsControlBackground}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="BorderBrush" Value="{StaticResource WsBorder}"/>
+    <Setter Property="CornerRadius" Value="13"/>
+    <Setter Property="FontSize" Value="{StaticResource WsBodyFontSize}"/>
+    <Setter Property="Foreground" Value="{StaticResource WsTextSecondary}"/>
+  </Style>
+  <Style Selector="ToggleButton.ws-category:pointerover">
+    <Setter Property="BorderBrush" Value="{StaticResource WsBorderStrong}"/>
+    <Setter Property="Foreground" Value="{StaticResource WsTextPrimary}"/>
+  </Style>
+  <Style Selector="ToggleButton.ws-category:checked">
+    <Setter Property="Background" Value="{StaticResource WsAccentDim}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource WsAccent}"/>
+    <Setter Property="Foreground" Value="{StaticResource WsTextPrimary}"/>
+  </Style>
+</Styles>

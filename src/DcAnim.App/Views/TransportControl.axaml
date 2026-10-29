@@ -1,0 +1,55 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DcAnim.App.Views.TransportControl">
+  <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+    <Button x:Name="FirstButton" Classes="ws-transport"
+            ToolTip.Tip="Jump to first frame (Home)">
+      <Path Data="{StaticResource IconFirst}" Fill="{StaticResource WsTextSecondary}"
+            Width="16" Height="16" Stretch="Uniform"/>
+    </Button>
+    <Button x:Name="PrevButton" Classes="ws-transport"
+            ToolTip.Tip="Previous frame (Left arrow)">
+      <Path Data="{StaticResource IconPrevious}" Fill="{StaticResource WsTextSecondary}"
+            Width="16" Height="16" Stretch="Uniform"/>
+    </Button>
+    <Button x:Name="PlayButton" Classes="ws-transport ws-transport-primary" Width="44"
+            ToolTip.Tip="Play / pause (Space)">
+      <Path x:Name="PlayIcon" Data="{StaticResource IconPlay}" Fill="White"
+            Width="16" Height="16" Stretch="Uniform"/>
+    </Button>
+    <Button x:Name="NextButton" Classes="ws-transport"
+            ToolTip.Tip="Next frame (Right arrow)">
+      <Path Data="{StaticResource IconNext}" Fill="{StaticResource WsTextSecondary}"
+            Width="16" Height="16" Stretch="Uniform"/>
+    </Button>
+    <Button x:Name="LastButton" Classes="ws-transport"
+            ToolTip.Tip="Jump to last frame (End)">
+      <Path Data="{StaticResource IconLast}" Fill="{StaticResource WsTextSecondary}"
+            Width="16" Height="16" Stretch="Uniform"/>
+    </Button>
+
+    <CheckBox x:Name="LoopCheck" Content="Loop" IsChecked="True"
+              VerticalAlignment="Center" Margin="8,0,0,0"
+              ToolTip.Tip="Loop playback"/>
+
+    <TextBlock Text="Speed" Classes="ws-prop-label" Margin="8,0,0,0"/>
+    <ComboBox x:Name="SpeedBox" Width="76" SelectedIndex="2"
+              ToolTip.Tip="Playback speed multiplier">
+      <ComboBoxItem Content="0.25x" Tag="0.25"/>
+      <ComboBoxItem Content="0.5x" Tag="0.5"/>
+      <ComboBoxItem Content="1x" Tag="1"/>
+      <ComboBoxItem Content="2x" Tag="2"/>
+      <ComboBoxItem Content="4x" Tag="4"/>
+    </ComboBox>
+
+    <TextBlock Text="FPS" Classes="ws-prop-label" Margin="8,0,0,0"/>
+    <ComboBox x:Name="FpsBox" Width="70" SelectedIndex="3"
+              ToolTip.Tip="Assumed frames per second (native timing is uniform-unknown)">
+      <ComboBoxItem Content="12" Tag="12"/>
+      <ComboBoxItem Content="15" Tag="15"/>
+      <ComboBoxItem Content="24" Tag="24"/>
+      <ComboBoxItem Content="30" Tag="30"/>
+      <ComboBoxItem Content="60" Tag="60"/>
+    </ComboBox>
+  </StackPanel>
+</UserControl>

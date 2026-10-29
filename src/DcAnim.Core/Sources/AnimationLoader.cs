@@ -87,9 +87,8 @@ public sealed class AnimationLoader : IDisposable
         var frames = new List<ClipFrame>(regions.Count);
         for (int i = 0; i < regions.Count; i++)
         {
-            var region = _regionsByName[regions[i]];
             var duration = perFrameDurations?[i] ?? TimeSpan.FromSeconds(1.0 / fps);
-            frames.Add(_composer.Compose(region, i, duration));
+            frames.Add(ComposeFrame(animationId, regions[i], i, duration));
         }
 
         AnimationTiming? t = null;
@@ -102,6 +101,27 @@ public sealed class AnimationLoader : IDisposable
             Timing = t,
             DefaultFps = fps,
         };
+    }
+
+    /// <summary>
+    /// Decodes a single frame (e.g. frame 0 for library thumbnails) without
+    /// composing the whole clip. Throws <see cref="KeyNotFoundException"/> for
+    /// unknown IDs and <see cref="ArgumentOutOfRangeException"/> for bad indexes.
+    /// </summary>
+    public ClipFrame LoadFrame(string animationId, int frameIndex, double fps = 30.0)
+    {
+        var regions = _catalog.GetFrameRegions(animationId);
+        if (fps <= 0) throw new ArgumentOutOfRangeException(nameof(fps));
+        if (frameIndex < 0 || frameIndex >= regions.Count)
+            throw new ArgumentOutOfRangeException(nameof(frameIndex));
+        return ComposeFrame(animationId, regions[frameIndex], frameIndex, TimeSpan.FromSeconds(1.0 / fps));
+    }
+
+    private ClipFrame ComposeFrame(string animationId, string regionName, int frameIndex, TimeSpan duration)
+    {
+        if (!_regionsByName.TryGetValue(regionName, out var region))
+            throw new InvalidDataException($"Catalog region '{regionName}' of '{animationId}' has no atlas entry.");
+        return _composer.Compose(region, frameIndex, duration);
     }
 
     /// <summary>Loads a small hand-authored timing overlay (animId → hitFrame/charge/...). No game art involved.</summary>

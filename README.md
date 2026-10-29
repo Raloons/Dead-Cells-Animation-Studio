@@ -45,26 +45,37 @@ Evidence capture (used for the screenshots above):
 dotnet run --project src/DcAnim.App -- --evidence <output-dir>
 ```
 
-## What works in AS-M1
+## What works (AS-M2 workspace)
 
-- Native catalog: all hero animations from `atlas/beheaded.atlas`
-  (572 animation IDs, e.g. `AtkKatanaA/B/B2/B3/B4`, `LoadAtkKatanaA/B`)
-- Genuine frame playback: play / pause / restart / loop / frame stepping /
-  timeline scrubbing / 0.25x–4x speed / 12–60 FPS / 1x–8x zoom
-- Inspector: ID, frame count, duration, current frame, hit frame, charge,
-  FX ID, timing source, asset source
-- Timeline with frame cells, playhead, hit-frame marker
-- CDB-derived timing overlay for the verified Katana links
-  (`src/DcAnim.App/data/timing-overrides.json`)
+- CapCut-inspired layout: top bar, resizable library / viewport / inspector,
+  professional filmstrip timeline (ruler, playhead, hit marker, zoom, scrub)
+- Native library: 572 hero animations with search, categories
+  (Attacks 388 · Movement 31 · Idle 50 · Other 103), list/grid views, lazy
+  thumbnails
+- Genuine frame playback: play / pause / restart / first / prev / next /
+  last, loop, timeline scrubbing, 0.25x–4x speed, 12–60 FPS, 1–8x zoom,
+  fit-to-view, pan, checkerboard toggle
+- Inspector: Animation / Timing / Source sections; CDB-derived timing overlay
+  for the verified Katana links
+- Keyboard shortcuts, tooltips, loading/empty/error states, persisted
+  workspace layout
+
+![AS-M2 workspace at 1920x1080](docs/evidence/as-m2-1920x1080.png)
+
+AS-M1 foundations (decoder, catalog, playback engine, pixel-exact tests)
+are unchanged; see `docs/AS-M1-REPORT.md`.
 
 ## Project layout
 
 ```text
-src/DcAnim.Core/     PAK reader, BATL parser, frame composer, catalog,
-                     playback engine, game locator (UI-free, tested)
-src/DcAnim.App/      Avalonia desktop UI (dark + violet creative-suite theme)
-tests/DcAnim.Tests/  xUnit v3: format tests + native-asset integration tests
-docs/                ARCHITECTURE.md, AS-M1-REPORT.md, evidence/
+src/DcAnim.Core/     PAK reader, BATL parser, frame composer, catalog +
+                     categories, playback engine, timeline math, workspace
+                     settings, game locator (UI-free, tested)
+src/DcAnim.App/      Avalonia workspace UI: theme + icons, asset browser,
+                     viewport, transport, inspector, filmstrip timeline
+tests/DcAnim.Tests/  xUnit v3: format + workspace-logic + native-asset tests
+docs/                ARCHITECTURE.md, AS-M1-REPORT.md, AS-M2-REPORT.md,
+                     evidence/
 scripts/run.cmd      launcher
 ```
 

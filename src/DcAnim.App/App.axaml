@@ -4,6 +4,10 @@
              RequestedThemeVariant="Dark">
   <Application.Resources>
     <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://DeadCells.AnimationStudio/Theme/WorkspaceTheme.axaml"/>
+        <ResourceInclude Source="avares://DeadCells.AnimationStudio/Resources/Icons.axaml"/>
+      </ResourceDictionary.MergedDictionaries>
       <!-- Violet accent over the dark Fluent theme. -->
       <Color x:Key="SystemAccentColor">#8B5CF6</Color>
       <Color x:Key="SystemAccentColorLight1">#A78BFA</Color>
@@ -17,5 +21,5 @@
 
   <Application.Styles>
     <FluentTheme />
-  </Application.Styles>
-</Application>
+    <StyleInclude Source="avares://DeadCells.AnimationStudio/Theme/WorkspaceStyles.axaml"/>
+  </Application.Styles></Application>

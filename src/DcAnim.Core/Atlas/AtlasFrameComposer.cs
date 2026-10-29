@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using DcAnim.Core.Model;
 using SkiaSharp;
 
@@ -46,18 +47,32 @@ public sealed class AtlasFrameComposer : IDisposable
 
         using var image = surface.Snapshot();
         using var pixmap = image.PeekPixels();
-        var rgba = new byte[region.OriginalWidth * region.OriginalHeight * 4];
-        // SKColorType.Rgba8888 + Premul: unpremultiply on copy for UI use.
-        for (int y = 0; y < region.OriginalHeight; y++)
+        int width = region.OriginalWidth;
+        int height = region.OriginalHeight;
+        var rgba = new byte[width * height * 4];
+        // Bulk copy, then unpremultiply in managed code (per-pixel GetPixelColor is ~50x slower).
+        int rowBytes = (int)pixmap.RowBytes;
+        var row = new byte[rowBytes];
+        nint src = pixmap.GetPixels();
+        for (int y = 0; y < height; y++)
         {
-            for (int x = 0; x < region.OriginalWidth; x++)
+            Marshal.Copy(src + y * rowBytes, row, 0, Math.Min(rowBytes, width * 4));
+            for (int x = 0; x < width; x++)
             {
-                var c = pixmap.GetPixelColor(x, y);
-                int i = (y * region.OriginalWidth + x) * 4;
-                rgba[i] = c.Red;
-                rgba[i + 1] = c.Green;
-                rgba[i + 2] = c.Blue;
-                rgba[i + 3] = c.Alpha;
+                int s = x * 4;
+                int d = (y * width + x) * 4;
+                byte a = row[s + 3];
+                if (a == 0)
+                {
+                    rgba[d] = rgba[d + 1] = rgba[d + 2] = rgba[d + 3] = 0;
+                }
+                else
+                {
+                    rgba[d] = (byte)Math.Min(255, (row[s] * 255 + a / 2) / a);
+                    rgba[d + 1] = (byte)Math.Min(255, (row[s + 1] * 255 + a / 2) / a);
+                    rgba[d + 2] = (byte)Math.Min(255, (row[s + 2] * 255 + a / 2) / a);
+                    rgba[d + 3] = a;
+                }
             }
         }
 

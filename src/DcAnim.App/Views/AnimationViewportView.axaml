@@ -1,0 +1,34 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:DcAnim.App.Controls"
+             x:Class="DcAnim.App.Views.AnimationViewportView">
+  <DockPanel>
+    <!-- Viewport header -->
+    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4">
+        <ToggleButton x:Name="CheckerButton" Classes="ws-tool" IsChecked="True"
+                      ToolTip.Tip="Toggle checkerboard background">
+          <Path Data="{StaticResource IconChecker}" Fill="{StaticResource WsTextSecondary}"
+                Width="16" Height="16" Stretch="Uniform"/>
+        </ToggleButton>
+        <Button x:Name="FitButton" Classes="ws-tool"
+                ToolTip.Tip="Fit preview to view (Ctrl+0)">
+          <Path Data="{StaticResource IconFit}" Stroke="{StaticResource WsTextSecondary}"
+                StrokeThickness="1.6" Width="16" Height="16" Stretch="Uniform"/>
+        </Button>
+        <TextBlock x:Name="ZoomLabel" Classes="ws-prop-label" Text="300%"
+                   VerticalAlignment="Center" Margin="4,0,0,0" Width="44"/>
+        <Slider x:Name="ZoomSlider" Minimum="1" Maximum="8" Value="3" Width="110"
+                VerticalAlignment="Center"
+                ToolTip.Tip="Preview zoom (nearest-neighbor)"/>
+      </StackPanel>
+      <StackPanel>
+        <TextBlock x:Name="TitleText" FontSize="14" Foreground="{StaticResource WsTextPrimary}" Text="No animation"/>
+        <TextBlock x:Name="SubtitleText" FontSize="11" Foreground="{StaticResource WsTextMuted}" Text="Open a source to begin"/>
+      </StackPanel>
+    </DockPanel>
+
+    <!-- Canvas -->
+    <controls:PreviewControl x:Name="Preview"/>
+  </DockPanel>
+</UserControl>
