@@ -2099,12 +2099,14 @@ public sealed partial class MainWindow : Window
 
     private async Task MaybeRunAuditAsync()
     {
+        // Check before try: the finally below shuts the app down, and it must
+        // only ever run for real --audit invocations, never normal launches.
+        var args = Environment.GetCommandLineArgs();
+        int i = Array.IndexOf(args, "--audit");
+        if (i < 0 || i + 1 >= args.Length)
+            return;
         try
         {
-            var args = Environment.GetCommandLineArgs();
-            int i = Array.IndexOf(args, "--audit");
-            if (i < 0 || i + 1 >= args.Length)
-                return;
             string dir = args[i + 1];
             await Task.Delay(800); // let auto-load + layout settle
             if (_loader is null)
