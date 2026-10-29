@@ -1,6 +1,7 @@
 using System.IO;
 using Avalonia;
 using Avalonia.Media.Imaging;
+using DcAnim.Core.Catalog;
 using DcAnim.Core.Export;
 using DcAnim.Core.Model;
 using DcAnim.Core.Playback;
@@ -214,6 +215,26 @@ public sealed partial class MainWindow
             Browser.Search("zzz-no-such-animation");
             AuditCheck(true, "noop");
             Browser.Search("");
+        });
+        AuditStep("viewer.category-switch-with-selection", () =>
+        {
+            // Regression: selecting an Attacks animation, then switching to
+            // the Idle pill crashed in ApplyFilter (Avalonia selection model
+            // tripped on the stale index). Exercises every category with a
+            // live selection, in both list and grid modes.
+            Browser.SetViewMode(grid: false);
+            Browser.Select("AtkKatanaB2");
+            Browser.SetCategory(AnimationCategory.Idle);
+            Browser.SetCategory(AnimationCategory.Movement);
+            Browser.SetCategory(AnimationCategory.Other);
+            Browser.SetCategory(AnimationCategory.Attacks);
+            Browser.SetCategory(null); // All
+            Browser.SetViewMode(grid: true);
+            Browser.Select("AtkKatanaB2");
+            Browser.SetCategory(AnimationCategory.Idle);
+            Browser.SetCategory(null);
+            Browser.SetViewMode(grid: false);
+            AuditCheck(Browser.SelectedId == "AtkKatanaB2", "selection preserved across filters");
         });
         AuditStep("viewer.list-grid-toggle", () =>
         {

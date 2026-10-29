@@ -61,6 +61,7 @@ selection/rebuild/transport transitions**:
 | 12 | `Save` wrote directly to the destination — crash mid-write corrupts the project | Atomic save: temp file in same directory + `File.Move(overwrite:true)` |
 | 13 | Dead `MigrateV1ToV2` API suggested a migration path that doesn't exist | Removed; v1 loads directly with documented defaults |
 | 14 | Unhandled async/UI exceptions terminated the process silently | `CrashLog` + `AppDomain`/`TaskScheduler`/dispatcher handlers; error dialog with log path; app stays alive |
+| 15 | Clicking a library category pill (e.g. Idle) with a filtered-out selection crashed in `ApplyFilter` (`ArgumentOutOfRangeException` in Avalonia's selection model) — root cause was in-place mutation of the live `_filtered` ItemsSource plus clearing selection after the swap | `ApplyFilter` now clears selection while indices are valid → detaches source → rebuilds while detached → reattaches and restores; user-reported, crash log confirmed, regression-covered by `viewer.category-switch-with-selection` (57 in-app steps) |
 
 ## 3. Workflow coverage matrix
 
@@ -181,4 +182,4 @@ verified in-app); unbounded fuzzing (deliberately out of scope).
 - `dotnet test tests/DcAnim.Tests/DcAnim.Tests.csproj`: **139 passed,
   1 skipped, 0 failed** (140 total; skip is the pre-existing native
   atlas-tool pixel-parity test requiring the external tool).
-- In-app audit: **56 passed, 0 failed**, clean exit.
+- In-app audit: **57 passed, 0 failed** (incl. `viewer.category-switch-with-selection`), clean exit.

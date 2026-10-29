@@ -151,6 +151,17 @@ public sealed partial class AssetBrowserView : UserControl
 
     public void Search(string query) => SearchBox.Text = query;
 
+    /// <summary>
+    /// Audit/test hook: mirrors what a category pill does (set filter, then
+    /// <see cref="ApplyFilter"/>). Pill IsChecked visuals are owned by the
+    /// buttons; this exercises the filter + selection-sync logic directly.
+    /// </summary>
+    internal void SetCategory(AnimationCategory? category)
+    {
+        _category = category;
+        ApplyFilter();
+    }
+
     public void ForEachItem(Action<AnimationListItem> action)
     {
         foreach (var item in _allItems)
@@ -213,6 +224,20 @@ public sealed partial class AssetBrowserView : UserControl
     private void ApplyFilter()
     {
         string query = SearchBox.Text ?? string.Empty;
+
+        // 1. Drop selection FIRST, while indices are still valid against the
+        //    currently attached source. (The resulting SelectionChanged(null)
+        //    is ignored by ForwardSelection, so no host load is triggered.)
+        AnimationList.SelectedItem = null;
+        AnimationGrid.SelectedItem = null;
+
+        // 2. Detach before rebuilding: _filtered is mutated in place below,
+        //    and any live ItemsSourceView over it would invalidate the
+        //    selection model's stored indices mid-mutation.
+        AnimationList.ItemsSource = null;
+        AnimationGrid.ItemsSource = null;
+
+        // 3. Rebuild the filter set while detached.
         _filtered.Clear();
         foreach (var item in _allItems)
         {
@@ -224,6 +249,7 @@ public sealed partial class AssetBrowserView : UserControl
             _filtered.Add(item);
         }
 
+        // 4. Reattach and restore the selection (no-op when already null).
         CountText.Text = $"{_filtered.Count} / {_allItems.Count} animations";
         bool hasItems = _filtered.Count > 0;
         AnimationList.ItemsSource = hasItems ? _filtered : null;
