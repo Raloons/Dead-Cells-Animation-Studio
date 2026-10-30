@@ -104,10 +104,23 @@ public sealed class NativeBeheadedTests
 
         Assert.Equal(3, atlas.Pages.Count);
         Assert.Equal("beheaded0.png", atlas.Pages[0]);
-        // 10,233 complete regions; the final region is truncated in the
-        // shipped file (official AtlasTool fails there too) and is dropped.
-        Assert.Equal(10233, atlas.Regions.Count);
-        Assert.Equal(1, atlas.DroppedTrailingRegions);
+        Assert.Equal(10234, atlas.Regions.Count);
+        Assert.Equal(0, atlas.DroppedTrailingRegions);
+        Assert.Contains(atlas.Regions, r => r.Name == "scissorsAtkC_04");
+    }
+
+    [Fact]
+    public void ResPak_CompleteDirectoryAndPayloadTails_ValidateAgainstNativeChecksums()
+    {
+        SkipUnlessAvailable(out var resPak);
+        using var pak = PakReader.Open(resPak);
+        Assert.Equal(238570, pak.DataStart);
+        Assert.Equal(7055, pak.Entries.Count);
+        Assert.True(pak.Contains("data.cdb"));
+        using var tracks = System.Text.Json.JsonDocument.Parse(pak.ReadFile("atlas/beheaded_tracks.json"));
+        Assert.Equal(572, tracks.RootElement.EnumerateObject().Count());
+        var png = pak.ReadFile("atlas/beheaded0.png");
+        Assert.Equal(new byte[] { 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130 }, png[^12..]);
     }
 
     [Fact]

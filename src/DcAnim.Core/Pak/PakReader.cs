@@ -6,10 +6,10 @@ namespace DcAnim.Core.Pak;
 /// Reads Dead Cells PAK v1 archives (stock <c>res.pak</c>: magic <c>PAK\x01</c>).
 /// Layout (little-endian, verified against stock res.pak 2026-10-28):
 /// <list type="bullet">
-/// <item><c>PAK\x01</c>, u32 table-size hint, NUL-terminated hash string, u8 version, u32 root entry count.</item>
+/// <item><c>PAK\x01</c>, u32 data-section offset, NUL-terminated hash string, u8 version, u32 root entry count.</item>
 /// <item>Recursive entries: u8 name length, UTF-8 name, u8 type (0 = file, 1 = directory).
-/// File: u32 offset, u32 size, u32 crc. Directory: u32 child count, then children.</item>
-/// <item>Data section: each payload prefixed by a 4-byte header (cookie), stripped on read.</item>
+/// File: u32 offset, u32 size, u32 Adler-32. Directory: u32 child count, then children.</item>
+/// <item>Data section: complete raw payloads; no per-file prefix.</item>
 /// </list>
 /// The reader never writes to the archive. It only parses the table and streams payloads.
 /// </summary>
@@ -49,8 +49,10 @@ public sealed class PakReader : IDisposable
 
     public static PakReader Open(Stream stream, bool leaveOpen = true)
     {
+        if (!stream.CanSeek)
+            throw new NotSupportedException("PakReader requires a seekable stream.");
         using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
-        long start = stream.CanSeek ? stream.Position : 0;
+        long start = stream.Position;
 
         var magic = reader.ReadBytes(4);
         if (magic.Length != 4 || magic[0] != (byte)'P' || magic[1] != (byte)'A' || magic[2] != (byte)'K')
@@ -58,7 +60,7 @@ public sealed class PakReader : IDisposable
         if (magic[3] != 0x01)
             throw new NotSupportedException($"Unsupported PAK version byte 0x{magic[3]:X2}; only stock PAK\\x01 is supported.");
 
-        _ = reader.ReadUInt32(); // table-size hint; data start is derived from actual parse position.
+        uint dataOffset = reader.ReadUInt32();
 
         // NUL-terminated hash/identifier string.
         var hashBytes = new List<byte>();
@@ -85,7 +87,10 @@ public sealed class PakReader : IDisposable
         while (stack.Count > 0)
         {
             var (count, prefix) = stack.Pop();
-            for (uint i = 0; i < count; i++)
+            if (count == 0) continue;
+            // The serialized table is depth-first: directory children precede
+            // the next sibling. Save siblings, then process children immediately.
+            stack.Push((count - 1, prefix));
             {
                 string name = ReadName();
                 string full = string.IsNullOrEmpty(prefix) ? name : prefix + "/" + name;
@@ -100,7 +105,8 @@ public sealed class PakReader : IDisposable
                     uint offset = reader.ReadUInt32();
                     uint size = reader.ReadUInt32();
                     uint crc = reader.ReadUInt32();
-                    entries[full] = new PakEntry(full, offset, size, crc);
+                    if (!entries.TryAdd(full, new PakEntry(full, offset, size, crc)))
+                        throw new InvalidDataException($"Duplicate PAK path '{full}'.");
                 }
                 else
                 {
@@ -109,15 +115,16 @@ public sealed class PakReader : IDisposable
             }
         }
 
-        long dataStart = (stream.CanSeek ? stream.Position : start);
+        long dataStart = checked(start + dataOffset);
+        if (dataStart < stream.Position || dataStart > stream.Length)
+            throw new InvalidDataException("PAK data offset overlaps its table or lies outside the archive.");
         return new PakReader(stream, leaveOpen, entries, dataStart);
     }
 
     public bool Contains(string archivePath) => Entries.ContainsKey(Normalize(archivePath));
 
     /// <summary>
-    /// Reads a payload and strips the 4-byte per-file header cookie,
-    /// returning the raw content (e.g. starting with <c>PNG</c>, <c>BATL</c> or <c>{</c>).
+    /// Reads the complete raw payload and verifies its Adler-32 checksum.
     /// </summary>
     public byte[] ReadFile(string archivePath)
     {
@@ -129,6 +136,8 @@ public sealed class PakReader : IDisposable
         var buffer = new byte[entry.Size];
         lock (_stream)
         {
+            if (DataStart + entry.Offset + entry.Size > _stream.Length)
+                throw new EndOfStreamException($"Truncated payload for '{archivePath}'.");
             _stream.Position = DataStart + entry.Offset;
             int read = 0;
             while (read < buffer.Length)
@@ -140,11 +149,23 @@ public sealed class PakReader : IDisposable
             }
         }
 
-        if (buffer.Length < 4)
-            throw new InvalidDataException($"Payload for '{archivePath}' is shorter than the 4-byte header.");
-        var body = new byte[buffer.Length - 4];
-        Buffer.BlockCopy(buffer, 4, body, 0, body.Length);
-        return body;
+        if (Adler32(buffer) != entry.Crc)
+            throw new InvalidDataException($"PAK checksum mismatch for '{archivePath}'.");
+        return buffer;
+    }
+
+    private static uint Adler32(byte[] data)
+    {
+        uint a = 1, b = 0;
+        // Bound each accumulation to avoid overflow while reducing modulo work.
+        for (int start = 0; start < data.Length; start += 5552)
+        {
+            int end = Math.Min(data.Length, start + 5552);
+            for (int i = start; i < end; i++) { a += data[i]; b += a; }
+            a %= 65521;
+            b %= 65521;
+        }
+        return b << 16 | a;
     }
 
     private static string Normalize(string path) => path.Replace('\\', '/');

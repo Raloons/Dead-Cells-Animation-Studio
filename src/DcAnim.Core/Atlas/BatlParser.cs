@@ -15,9 +15,8 @@ namespace DcAnim.Core.Atlas;
 /// </code>
 /// The next page follows its 0x00 terminator as u8 name length + name.
 /// Offsets paste top-left onto the original-size canvas.
-/// The shipped <c>beheaded.atlas</c> ends with a 2-byte-truncated final region
-/// (the official AtlasTool also fails there); it is dropped and counted in
-/// <see cref="BatlAtlasData.DroppedTrailingRegions"/> instead of failing the parse.
+/// A terminal empty page name ends the atlas. Incomplete trailing regions in
+/// damaged inputs are counted in <see cref="BatlAtlasData.DroppedTrailingRegions"/>.
 /// </summary>
 public static class BatlParser
 {
@@ -55,6 +54,8 @@ public static class BatlParser
             if (pos >= data.Length)
                 return false;
             int nameLen = data[pos++];
+            if (nameLen == 0)
+                return false;
             if (pos + nameLen > data.Length)
                 throw new EndOfStreamException("Truncated BATL page name.");
             pages.Add(ReadString(nameLen));
@@ -75,9 +76,8 @@ public static class BatlParser
                 continue;
             }
 
-            // A region needs name + flags(2) + 8xu16(16) bytes. The shipped
-            // beheaded.atlas is truncated mid-region at EOF; drop it like the
-            // official tooling does (it errors there too) and keep the rest.
+            // A region needs name + flags(2) + 8xu16(16) bytes. Preserve the
+            // explicit damaged-input diagnostic without inventing a region.
             if (pos + nameLen + 18 > data.Length)
             {
                 dropped++;

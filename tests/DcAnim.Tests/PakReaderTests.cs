@@ -63,11 +63,12 @@ public sealed class PakReaderTests
             WriteName(f.Name);
             table.Add(0);
             WriteUInt(table, offset);
-            WriteUInt(table, (uint)(f.Body.Length + 4));
-            WriteUInt(table, 0x12345678);
-            payloads.AddRange(new byte[] { 0xAA, 0xBB, 0xCC, 0xDD }); // 4-byte header cookie
+            WriteUInt(table, (uint)f.Body.Length);
+            uint a = 1, b = 0;
+            foreach (byte value in f.Body) { a = (a + value) % 65521; b = (b + a) % 65521; }
+            WriteUInt(table, b << 16 | a);
             payloads.AddRange(f.Body);
-            offset += (uint)(f.Body.Length + 4);
+            offset += (uint)f.Body.Length;
         }
 
         static void WriteUInt(List<byte> buf, uint v)
@@ -80,12 +81,15 @@ public sealed class PakReaderTests
         var pak = new List<byte>();
         pak.AddRange(Encoding.ASCII.GetBytes("PAK\x01"));
         Span<byte> hint = stackalloc byte[4];
-        BinaryPrimitives.WriteUInt32LittleEndian(hint, (uint)table.Count);
+        // Header offset includes header, directory table and four bytes of
+        // table/data padding, matching the observed native resource layout.
+        BinaryPrimitives.WriteUInt32LittleEndian(hint, (uint)(4 + 4 + 9 + 1 + table.Count + 4));
         pak.AddRange(hint.ToArray());
         pak.AddRange(Encoding.ASCII.GetBytes("testhash"));
         pak.Add(0);
         pak.Add(1);
         pak.AddRange(table);
+        pak.AddRange(new byte[4]);
         pak.AddRange(payloads);
         return pak.ToArray();
     }
@@ -124,5 +128,58 @@ public sealed class PakReaderTests
         var bytes = BuildPak();
         bytes[3] = 0x00; // mod-style magic byte
         Assert.Throws<NotSupportedException>(() => PakReader.Open(new MemoryStream(bytes)));
+    }
+
+    [Fact]
+    public void Open_NestedDirectoriesAndSiblings_RetainsDistinctBasenames()
+    {
+        var files = new[]
+        {
+            new FileSpec("data.cdb", "root-tail"u8.ToArray()),
+            new FileSpec("atlas/hero/page.png", "hero-tail"u8.ToArray()),
+            new FileSpec("atlas/page.png", "atlas-tail"u8.ToArray()),
+            new FileSpec("sound/nested/page.png", "sound-tail"u8.ToArray()),
+            new FileSpec("sound/z.wav", new byte[] { 7 })
+        };
+        using var reader = PakReader.Open(new MemoryStream(BuildPak(files)));
+        Assert.Equal(files.Length, reader.Entries.Count);
+        foreach (var file in files) Assert.Equal(file.Body, reader.ReadFile(file.Path));
+    }
+
+    [Fact]
+    public void ReadFile_PreservesShortEmptyAndFinalFourBytes()
+    {
+        var bytes = BuildPak(new("empty", []), new("short", [1, 2, 3]),
+            new("json", "{\"tail\":true}"u8.ToArray()));
+        using var reader = PakReader.Open(new MemoryStream(bytes));
+        Assert.Empty(reader.ReadFile("empty"));
+        Assert.Equal(new byte[] { 1, 2, 3 }, reader.ReadFile("short"));
+        Assert.Equal("{\"tail\":true}"u8.ToArray(), reader.ReadFile("json"));
+    }
+
+    [Fact]
+    public void ReadFile_CorruptedPayload_RejectsAdlerMismatch()
+    {
+        var bytes = BuildPak(new FileSpec("hello", "hello"u8.ToArray()));
+        bytes[^1] ^= 1;
+        using var reader = PakReader.Open(new MemoryStream(bytes));
+        Assert.Throws<InvalidDataException>(() => reader.ReadFile("hello"));
+    }
+
+    [Fact]
+    public void Open_EmbeddedArchive_UsesArchiveRelativeDataOffset()
+    {
+        var bytes = new byte[11].Concat(BuildPak(new FileSpec("file", [9, 8, 7, 6, 5]))).ToArray();
+        using var stream = new MemoryStream(bytes) { Position = 11 };
+        using var reader = PakReader.Open(stream);
+        Assert.Equal(new byte[] { 9, 8, 7, 6, 5 }, reader.ReadFile("file"));
+    }
+
+    [Fact]
+    public void Open_DataOffsetInsideTable_Rejects()
+    {
+        var bytes = BuildPak(new FileSpec("file", [1]));
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4, 4), 1);
+        Assert.Throws<InvalidDataException>(() => PakReader.Open(new MemoryStream(bytes)));
     }
 }

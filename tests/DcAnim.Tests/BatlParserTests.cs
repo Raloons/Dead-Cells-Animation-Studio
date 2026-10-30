@@ -88,11 +88,22 @@ public sealed class BatlParserTests
             ("ok_00", 0, 0, 10, 10, 0, 0, 32, 32),
             ("cut_01", 1, 1, 10, 10, 0, 0, 32, 32),
         }));
-        var cut = full[..^2]; // like the shipped beheaded.atlas tail
+        var cut = full[..^2]; // deliberately damaged input
 
         var atlas = BatlParser.Parse(cut);
 
         Assert.Single(atlas.Regions);
         Assert.Equal(1, atlas.DroppedTrailingRegions);
+    }
+
+    [Fact]
+    public void Parse_TerminalEmptyPage_DoesNotInventAnotherPage()
+    {
+        var full = BuildBatl(("a.png", new[] { ("last_04", 1, 2, 3, 4, 5, 6, 300, 300) }));
+        var atlas = BatlParser.Parse([.. full, 0, 0]);
+        Assert.Equal(new[] { "a.png" }, atlas.Pages);
+        Assert.Equal("last_04", Assert.Single(atlas.Regions).Name);
+        Assert.Equal(300, atlas.Regions[0].OriginalHeight);
+        Assert.Equal(0, atlas.DroppedTrailingRegions);
     }
 }

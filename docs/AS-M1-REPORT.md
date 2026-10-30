@@ -15,17 +15,21 @@ from the stock game archive and played back in a launchable desktop app.
 
 ## 2. Native resource discoveries
 
+**2026-10-30 correction:** the PAK reader's offset/traversal defect caused the
+original truncation conclusions. The table below is corrected from complete,
+checksum-verified resources; see `NATIVE-RESOURCE-DECODER-CORRECTION.md`.
+
 | Question | Answer (with evidence) |
 |---|---|
-| Hero animation storage | `atlas/beheaded.atlas` (binary BATL) + `beheaded0/1/2.png` in stock `res.pak`; 3 pages, **10,233 complete regions**, 572 animation IDs |
+| Hero animation storage | `atlas/beheaded.atlas` (binary BATL) + `beheaded0/1/2.png` in stock `res.pak`; 3 pages, **10,234 complete regions**, 572 animation IDs |
 | ID → visual mapping | Region runs `AnimName_00…NN` in numeric order; each region is one full-body frame cropped at `(x,y,w,h)` and pasted top-left at `(offsetX,offsetY)` onto an `(origW,origH)` canvas |
 | Frame durations | Not present in atlas/tracks/docs; uniform **30 FPS default** (user-adjustable 12–60, 0.25–4x), per-frame durations modeled for later real data |
 | Assembly/transforms | None needed — frames are pre-rendered; no rotation/scale metadata |
 | Tooling reused | Official `PAKTool`/`AtlasTool` workflows from `ModsDoc.pdf`; `AtlasTool -Expand` output used as the pixel-exact reference for our decoder |
 | BATL grammar | `'BATL' { u8 pageLen, page, { u8 nameLen, name, u16 flags, 8×u16 }, 0x00 }` next-page-after-`0x00`; see `docs/ARCHITECTURE.md` |
-| PAK v1 grammar | `PAK\x01`, table-size hint, hash string, version, root entries; file = `u32 offset/size/crc`; 4-byte header cookie stripped per payload; offsets relative to data start (238,566). 7,040 files in stock `res.pak` |
-| Shipped-data quirk | Final region `scissorsAtkC_04` is truncated 2 bytes short in the game file itself; official AtlasTool fails there too — our parser drops + counts it instead of failing |
-| Bone tracks | `atlas/beheaded_tracks.json`: 75 bones × triplets per frame (reserved for future hitbox overlays) |
+| PAK v1 grammar | `PAK\x01`, data offset, hash string, version, depth-first entries; file = `u32 offset/size/adler32`; complete raw payloads; data start 238,570. 7,055 files in stock `res.pak` |
+| BATL tail | Final region `scissorsAtkC_04` is complete; terminal empty page name does not add another page |
+| Bone tracks | `atlas/beheaded_tracks.json`: 572 animations, seven distinct track names overall; per-frame triplets, not 75 bones per animation |
 | Timing overlay | Katana links from AAB CDB research: B2 hit 6 / B3 hit 5 / B4 hit 3, charge 0.2 s, `animSpd` 1, `fxBeheadedKatana*` — labeled as observed overlay, not vanilla claims |
 | ModHelperSkin | Green debug mannequin (placeholder body), unsuitable as a visual target; investigated and rejected with evidence |
 

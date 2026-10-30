@@ -44,11 +44,11 @@ DeadCells.AnimationStudio.slnx
 
 ### PakReader (`Core/Pak`)
 
-- Parses PAK v1: `PAK\x01`, table-size hint, hash string, version, root count,
-  recursive entries (`u8 len + name + u8 type`; file = `u32 offset/size/crc`,
+- Parses PAK v1: `PAK\x01`, data-section offset, hash string, version, root count,
+  depth-first entries (`u8 len + name + u8 type`; file = `u32 offset/size/adler32`,
   dir = `u32 childCount`). Offsets are relative to the data section start.
-- `ReadFile` returns the payload minus the 4-byte per-file header cookie, so
-  content starts at its real magic (`PNG`, `BATL`, `{`, …).
+- `ReadFile` returns the complete raw payload and verifies Adler-32. There is
+  no per-file cookie. Header-declared padding separates table and data.
 - Read-only, seekable-stream based; never writes to the archive.
 - Throws `NotSupportedException` for non-v1 paks (e.g. mod paks use
   `PAK\0`) instead of mis-parsing them.
@@ -57,10 +57,11 @@ DeadCells.AnimationStudio.slnx
 
 - Grammar: `'BATL' { u8 pageLen, page, { u8 nameLen, name, u16 flags, 8×u16
   (x,y,w,h,offsetX,offsetY,origW,origH) }, 0x00 }`, next page after each `0x00`.
-- Known quirk: shipped `beheaded.atlas` ends 2 bytes short of a complete
-  final region (`scissorsAtkC_04`); the official AtlasTool errors there too.
-  The parser drops that single truncated region, counts it in
-  `DroppedTrailingRegions`, and keeps all 10,233 complete regions.
+- A terminal empty page name ends the stream. The stock v35 atlas has three
+  pages and **10,234 complete regions**, including `scissorsAtkC_04`.
+  Older truncation claims came from the PAK reader dropping four payload bytes;
+  see `NATIVE-RESOURCE-DECODER-CORRECTION.md`. Damaged trailing input is still
+  counted explicitly in `DroppedTrailingRegions`.
 
 ### AtlasFrameComposer (`Core/Atlas`)
 
