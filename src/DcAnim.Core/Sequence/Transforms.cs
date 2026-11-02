@@ -65,7 +65,7 @@ public sealed record TransformKeyframe(TransformProperty Property, int Frame, do
 /// Evaluates one property's keyframes at a clip-local frame. Deterministic:
 /// before the first key the base value holds; Hold keeps the latest key;
 /// Linear interpolates between bracketing keys (plain numeric lerp, even for
-/// rotation — documented, no angle unwrapping surprises).
+/// rotation - documented, no angle unwrapping surprises).
 /// </summary>
 public static class KeyframeEvaluator
 {

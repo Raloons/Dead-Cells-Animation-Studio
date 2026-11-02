@@ -1,4 +1,4 @@
-# AS-M2.1 Report — Professional Visual Redesign
+# AS-M2.1 Report - Professional Visual Redesign
 
 **Status: COMPLETE.** The workspace now reads as a mature, neutral desktop
 editing tool. No purple remains; selection, transport, sliders, timeline and
@@ -27,7 +27,7 @@ for the hit-frame marker. All AS-M2 functionality is preserved.
   never overlap at any zoom. Thin 1.5 px light playhead with small ruler
   handle through the full track. Selected frame = muted fill + 1.5 px gray
   outline (no violet wash). Hit marker = centered amber tick capped at 24 px
-  wide — identifiable at every zoom without becoming a block. Toolbar reduced
+  wide - identifiable at every zoom without becoming a block. Toolbar reduced
   to position readout + zoom + fit (legend and decorative icon removed).
   Auto-fit on load/layout with user-zoom memory (programmatic vs manual zoom
   distinguished so layout passes don't fight the user).
@@ -44,7 +44,7 @@ for the hit-frame marker. All AS-M2 functionality is preserved.
 
 - `dotnet build` (App) + `dotnet publish -c Release`: 0 errors.
 - `dotnet test`: **78/78 pass** (pixel-exact BATL test included; no test
-  changes needed — redesign is presentation-only).
+  changes needed - redesign is presentation-only).
 - Real-app screenshots inspected at 1920×1080, 1366×768, 2560×1440, grid
   view, and timeline min/auto zoom:
   `as-m2.1-1920x1080.png`, `as-m2.1-1366x768.png`, `as-m2.1-2560x1440.png`,
@@ -59,7 +59,7 @@ for the hit-frame marker. All AS-M2 functionality is preserved.
 ## 3. Known limitations
 
 - Ruler at minimum zoom shows sparse labels (only frame 0 for an 11-frame
-  clip) — clean by design; minor ticks still mark every frame.
+  clip) - clean by design; minor ticks still mark every frame.
 - Timeline track caps at 128 px/frame; very wide windows leave empty track
   surface (honest editor surface, reserved for future tracks).
 - `hitFrame` 0/1-based convention still undocumented (marker indicative);

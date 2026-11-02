@@ -101,7 +101,7 @@ public sealed class TrackControl : Control
 
         if (n <= 0)
         {
-            var empty = new FormattedText("No frames — select an animation",
+            var empty = new FormattedText("No frames - select an animation",
                 System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
                 Typeface.Default, 12, TextBrush);
             context.DrawText(empty, new Point(8, RulerHeight + (LaneHeight - empty.Height) / 2));

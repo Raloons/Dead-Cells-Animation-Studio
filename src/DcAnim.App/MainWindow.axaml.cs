@@ -723,7 +723,7 @@ public sealed partial class MainWindow : Window
         else
         {
             Timeline.SetPosition(_engine.CurrentFrameIndex, clip.FrameCount, _fps);
-            Inspector.SetPosition(_engine.CurrentFrameIndex, clip.FrameCount, frame?.RegionName ?? "—");
+            Inspector.SetPosition(_engine.CurrentFrameIndex, clip.FrameCount, frame?.RegionName ?? "-");
         }
         Transport.SetPlaying(_engine.IsPlaying);
     }
@@ -764,7 +764,7 @@ public sealed partial class MainWindow : Window
             // The overlay describes the SELECTED clip, so it must use that
             // clip's own resolved segment. Using the playhead clip's segment
             // with the selected clip's animation asked for source indexes
-            // valid for one animation but out of range for the other —
+            // valid for one animation but out of range for the other -
             // a per-frame crash during multi-clip playback.
             var r = clip is null
                 ? null
@@ -825,7 +825,7 @@ public sealed partial class MainWindow : Window
     {
         if (_seqClip is null || _seqClip.FrameCount == 0)
         {
-            Viewport.SetTitle(_doc.Project.Name, "Empty sequence — drag animations from the library");
+            Viewport.SetTitle(_doc.Project.Name, "Empty sequence - drag animations from the library");
             return;
         }
         int g = _engine.CurrentFrameIndex;
@@ -1315,7 +1315,7 @@ public sealed partial class MainWindow : Window
 
     private void UpdateTitle() =>
         Title = _seqMode
-            ? $"{_doc.DisplayName} — Dead Cells Animation Studio"
+            ? $"{_doc.DisplayName} - Dead Cells Animation Studio"
             : "Dead Cells Animation Studio";
 
     // ---------- sequence building ----------
@@ -1332,7 +1332,7 @@ public sealed partial class MainWindow : Window
     /// effect layers) and refreshes every sequence surface. Preview bitmaps,
     /// timeline thumbnails and all exporters consume these exact frames.
     /// Composition failures (oversized canvas, corrupt assets) leave the
-    /// previous valid state in place and surface a toast — never a crash,
+    /// previous valid state in place and surface a toast - never a crash,
     /// never a half-built timeline.
     /// </summary>
     private void RebuildSequence(bool selectLastAdded = false)
@@ -1779,7 +1779,7 @@ public sealed partial class MainWindow : Window
         });
         if (result is null)
         {
-            ShowToast("Playhead is at a clip edge — nothing to split.");
+            ShowToast("Playhead is at a clip edge - nothing to split.");
             return;
         }
         var right = _seqResolved.FirstOrDefault(r => r.Clip.Id == result.RightId);
@@ -2715,7 +2715,7 @@ public sealed partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(id))
             return;
         SeqInspector.SetDonor(id);
-        ShowToast($"Donor set to '{id}' — click Auto-detect to build poses.");
+        ShowToast($"Donor set to '{id}' - click Auto-detect to build poses.");
     }
 
     private void AutoDetectWeapon()
@@ -2829,7 +2829,7 @@ public sealed partial class MainWindow : Window
         var frame = clip.Weapon.ForSource(src);
         if (frame is null)
         {
-            ShowToast("Current source frame has no weapon pose — run Auto-detect first.");
+            ShowToast("Current source frame has no weapon pose - run Auto-detect first.");
             return;
         }
         var next = SequenceDocument.CloneWeapon(clip.Weapon)!;
@@ -2870,7 +2870,7 @@ public sealed partial class MainWindow : Window
         var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
         if (clip?.Weapon is null || clip.Weapon.Frames.Count == 0)
         {
-            ShowToast("Nothing to flip — run Auto-detect first.");
+            ShowToast("Nothing to flip - run Auto-detect first.");
             return;
         }
         var next = SequenceDocument.CloneWeapon(clip.Weapon)!;
@@ -2886,7 +2886,7 @@ public sealed partial class MainWindow : Window
             var frame = next.ForSource(src);
             if (frame is null)
             {
-                ShowToast("Current source frame has no weapon pose — run Auto-detect first.");
+                ShowToast("Current source frame has no weapon pose - run Auto-detect first.");
                 return;
             }
             frame.Pose = frame.Pose with { Degrees = NormalizeDegrees(frame.Pose.Degrees + 180) };
@@ -3080,7 +3080,7 @@ public sealed partial class MainWindow : Window
         var w = clip?.Weapon;
         if (clip is null || w is null || w.Frames.Count == 0)
         {
-            ShowToast("Nothing to export — run Auto-detect first.");
+            ShowToast("Nothing to export - run Auto-detect first.");
             return;
         }
         if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } provider)
@@ -3206,7 +3206,7 @@ public sealed partial class MainWindow : Window
             var project = ProjectSerializer.Load(path);
             if (_loader is null)
             {
-                ShowToast("Open a game source first — the project only stores references, not artwork.");
+                ShowToast("Open a game source first - the project only stores references, not artwork.");
                 return;
             }
             var missing = ProjectSerializer.ValidateAnimations(project, id => _loader.Catalog.Contains(id));
@@ -3356,7 +3356,7 @@ public sealed partial class MainWindow : Window
     /// Builds the Katana evidence sequence with AS-M4 authoring (clip
     /// keyframes, an effect overlay, an audio track, undo/redo), then saves,
     /// reopens and exports. Outputs are verified externally (docs/AS-M4).
-    /// Effect art and test audio are generated locally — no game/mod assets.
+    /// Effect art and test audio are generated locally - no game/mod assets.
     /// </summary>
     private async Task RunSequenceEvidenceAsync(string dir)
     {

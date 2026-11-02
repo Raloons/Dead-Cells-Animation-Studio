@@ -8,7 +8,7 @@ namespace DcAnim.Core.Export;
 /// frame, deterministic names (<c>frame_0000.png</c>…), pixel-identical to
 /// the editor preview (same composed frames, checkerboard never included).
 /// Refuses to write into a non-empty directory unless
-/// <paramref name="overwrite"/> is set — never silently overwrites.
+/// <paramref name="overwrite"/> is set - never silently overwrites.
 /// </summary>
 public static class PngSequenceExporter
 {

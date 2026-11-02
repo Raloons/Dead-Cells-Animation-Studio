@@ -4,8 +4,8 @@ namespace DcAnim.Core.Services;
 
 /// <summary>
 /// Persists workspace dimensions (panel widths, timeline height, window size)
-/// to a per-user JSON file. Paths are resolved from the user profile — never
-/// hardcoded — and all failures degrade to defaults.
+/// to a per-user JSON file. Paths are resolved from the user profile - never
+/// hardcoded - and all failures degrade to defaults.
 /// </summary>
 public sealed class WorkspaceSettings
 {

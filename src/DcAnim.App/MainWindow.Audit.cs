@@ -752,7 +752,7 @@ public sealed partial class MainWindow
             // the SHORT clip selected while the playhead sat in the LONG
             // clip's segment made the selection overlay request a source
             // index valid for the long animation but out of range for the
-            // selected one — a per-frame crash during playback.
+            // selected one - a per-frame crash during playback.
             _doc.New("Overlay");
             var clipA = _doc.AddClip("AtkKatanaA", 1.0);
             var clipB = _doc.AddClip(B(), 1.0);
@@ -1135,7 +1135,7 @@ public sealed partial class MainWindow
         await AuditStepAsync("export.final-showcase", async () =>
         {
             // Finale: a genuinely spliced Katana sequence with trim, reverse,
-            // hold, effect, audio and onion skins — the evidence screenshot.
+            // hold, effect, audio and onion skins - the evidence screenshot.
             _doc.New("Spliced Finale");
             var fa = _doc.AddClip("AtkKatanaA", 1.0);
             _doc.SetTrim(fa.Id, 0, 7, _loader!.Catalog.GetFrameRegions("AtkKatanaA").Count);

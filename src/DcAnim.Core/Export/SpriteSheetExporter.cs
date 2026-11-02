@@ -9,7 +9,7 @@ namespace DcAnim.Core.Export;
 /// plain row-major grid (configurable columns, optional padding); every cell
 /// is the full sequence canvas so all frames share coordinates with preview
 /// and PNG export. No power-of-two restriction. This is a generic art-tool
-/// interchange sheet — not Dead Cells' runtime BATL format.
+/// interchange sheet - not Dead Cells' runtime BATL format.
 /// </summary>
 public static class SpriteSheetExporter
 {

@@ -41,7 +41,7 @@ public static class CrashLog
     /// <summary>
     /// Returns false when the dialog was suppressed by the storm guard
     /// (already open, or shown within the cooldown). The log file is always
-    /// written regardless — use <see cref="LastPath"/> for the latest one.
+    /// written regardless - use <see cref="LastPath"/> for the latest one.
     /// </summary>
     public static async Task<bool> ShowDialogAsync(Window owner, string logPath)
     {

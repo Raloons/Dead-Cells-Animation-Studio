@@ -23,7 +23,7 @@ animations such as the Katana strike chain.
 
 **Easiest:** download the single-file `DeadCells.AnimationStudio.exe` from the
 [Releases page](https://github.com/Raloons/Dead-Cells-Animation-Studio/releases)
-and double-click it — no installer, no .NET runtime, no game files required.
+and double-click it - no installer, no .NET runtime, no game files required.
 
 Full download, build and troubleshooting instructions:
 **[INSTALL.md](INSTALL.md)**
@@ -77,7 +77,7 @@ dotnet run --project src/DcAnim.App -- --evidence <output-dir>
 ### Frame-editing tutorial (Katana splice)
 
 Frame numbers in the UI are 1-based ("Frames 4–8 of 26"); the file stores
-0-based indexes. Trimming is non-destructive — the native animation is never
+0-based indexes. Trimming is non-destructive - the native animation is never
 modified.
 
 1. File > Open res.pak… (or auto-detect), switch to **Sequence**, File > New.
@@ -92,10 +92,10 @@ modified.
    Drag clip edges to trim; drag bodies to reorder.
 7. View > Onion skins to judge transitions (ghosts follow holds/reverse).
 8. Play the sequence Space; Ctrl+Z / Ctrl+Y everything; Ctrl+S to save.
-9. File > Export sequence for PNG, GIF, or sheet — identical to the preview.
+9. File > Export sequence for PNG, GIF, or sheet - identical to the preview.
 
 A runnable example ships as `docs/evidence/katana-splice.dcanim` (native
-references only; effect/audio paths are placeholders — relink or delete
+references only; effect/audio paths are placeholders - relink or delete
 them). See `docs/AS-M4.2-REPORT.md` for the ripple policy, keyframe-remap
 rules, and resampling caveats.
 
@@ -120,7 +120,7 @@ rules, and resampling caveats.
 1. File > Open res.pak… (or auto-detect), switch to **Sequence**, File > New.
 2. Drag `AtkKatanaA`, `AtkKatanaB2`, `AtkKatanaB3`, `AtkKatanaB4` onto the
    timeline in order; set B3 to 0.5×, B4 to 1.25× in the inspector.
-3. Select the B2 clip: in TRANSFORM set keyframes — X 0→12 (frames 0→5),
+3. Select the B2 clip: in TRANSFORM set keyframes - X 0→12 (frames 0→5),
    ScaleX 1→1.5→1 (frames 0/5/10, Linear).
 4. File > Add effect image… (any transparent PNG), drag it to the B2 strike
    (frame 26), keyframe Scale 0.2→1.6 and Opacity 1→0 over its 12 frames.
@@ -140,7 +140,7 @@ effect/audio files with matching names). See `docs/AS-M4-REPORT.md`.
 - New / Open / Save / Save As with native dialogs, shortcuts, unsaved
   indicator + discard prompt; projects reopen without loss.
 - Exports: transparent PNG sequence, animated GIF (documented timing +
-  palette behavior), sprite sheet PNG + JSON metadata — all matching the
+  palette behavior), sprite sheet PNG + JSON metadata - all matching the
   editor preview frame-for-frame.
 - 99 automated tests green, including round-trip, timing, scrub/loop, and
   export-decoding tests.

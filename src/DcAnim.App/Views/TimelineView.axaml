@@ -18,7 +18,7 @@
       <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
         <TextBlock Text="TIMELINE" Classes="ws-panel-header" Margin="0"/>
         <TextBlock x:Name="PositionText" FontSize="12" Foreground="{StaticResource WsTextSecondary}"
-                   VerticalAlignment="Center" Text="—"/>
+                   VerticalAlignment="Center" Text="-"/>
       </StackPanel>
     </DockPanel>
 

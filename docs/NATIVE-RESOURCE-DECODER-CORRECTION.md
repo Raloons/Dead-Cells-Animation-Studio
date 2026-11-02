@@ -1,4 +1,4 @@
-# Native resource decoder correction — 2026-10-30
+# Native resource decoder correction - 2026-10-30
 
 During weapon-substitution research, independent archive reads found three
 coupled PAK-reader errors:

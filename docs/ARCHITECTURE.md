@@ -1,4 +1,4 @@
-# Architecture — Dead Cells Animation Studio (AS-M1)
+# Architecture - Dead Cells Animation Studio (AS-M1)
 
 ## Goals
 
@@ -67,7 +67,7 @@ DeadCells.AnimationStudio.slnx
 
 - SkiaSharp decodes page PNGs; each region is cropped and pasted top-left at
   (`OffsetX`,`OffsetY`) onto a transparent (`OriginalWidth`,`OriginalHeight`)
-  canvas — verified **pixel-exact** against official `AtlasTool -Expand`
+  canvas - verified **pixel-exact** against official `AtlasTool -Expand`
   output for every `AtkKatanaB2` frame (integration test).
 - Emits UI-neutral `ClipFrame` records (RGBA bytes + duration); the UI layer
   never touches SkiaSharp.
@@ -100,18 +100,18 @@ DeadCells.AnimationStudio.slnx
 ### GameSourceLocator (`Core/Sources`)
 
 - Steam registry (`HKLM\SOFTWARE\[Wow6432Node\]Valve\Steam`), then
-  `libraryfolders.vdf` libraries, then common drive paths — no hardcoded
+  `libraryfolders.vdf` libraries, then common drive paths - no hardcoded
   usernames. Returns the first directory containing `res.pak`.
 
 ## UI (`DcAnim.App`, Avalonia 11 + Fluent dark + violet accent)
 
-- **Left — Asset Browser:** search box, `N / M animations` count, `ListBox`.
-- **Center — Preview:** custom `PreviewControl` (checkerboard + centered
+- **Left - Asset Browser:** search box, `N / M animations` count, `ListBox`.
+- **Center - Preview:** custom `PreviewControl` (checkerboard + centered
   frame, `BitmapInterpolationMode.None`, 1–8x zoom) + transport bar
   (restart/prev/play/next, loop, speed 0.25–4x, FPS 12–60, zoom).
-- **Right — Inspector:** ID, frames, duration, current frame, hit frame,
+- **Right - Inspector:** ID, frames, duration, current frame, hit frame,
   charge, FX, timing source, asset source.
-- **Bottom — Timeline:** custom `TimelineControl` (frame cells, playhead,
+- **Bottom - Timeline:** custom `TimelineControl` (frame cells, playhead,
   hit marker, ruler, click/drag scrub via `ScrubRequested`).
 - **Menu:** File (open res.pak / atlas folder / reload / exit), Help (about
   + attribution). Status bar reports the active source or actionable errors.

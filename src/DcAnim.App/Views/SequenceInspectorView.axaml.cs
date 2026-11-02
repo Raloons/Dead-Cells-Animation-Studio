@@ -258,10 +258,10 @@ public sealed partial class SequenceInspectorView : UserControl
         try
         {
             ClipAnim.Text = "Select a clip on the timeline";
-            ClipFrames.Text = "—";
+            ClipFrames.Text = "-";
             KeyList.ItemsSource = null;
-            FxImage.Text = "—";
-            AuFile.Text = "—";
+            FxImage.Text = "-";
+            AuFile.Text = "-";
         }
         finally
         {
@@ -450,8 +450,8 @@ public sealed partial class SequenceInspectorView : UserControl
             WeaponPreserve.IsChecked = weapon?.PreserveBody ?? true;
             if (weapon is null || weapon.Frames.Count == 0)
             {
-                WeaponStatus.Text = weapon is null ? "No weapon override on this clip." : "Override has no frames — run Auto-detect.";
-                WeaponFrameLabel.Text = "—";
+                WeaponStatus.Text = weapon is null ? "No weapon override on this clip." : "Override has no frames - run Auto-detect.";
+                WeaponFrameLabel.Text = "-";
             }
             else
             {

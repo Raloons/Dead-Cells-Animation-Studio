@@ -7,7 +7,7 @@ namespace DcAnim.Core.Atlas;
 /// <summary>
 /// Composes animation frames from a parsed BATL atlas plus its page PNGs.
 /// Each region is cropped from its page and pasted top-left at (OffsetX, OffsetY)
-/// onto a transparent canvas of (OriginalWidth, OriginalHeight) — semantics
+/// onto a transparent canvas of (OriginalWidth, OriginalHeight) - semantics
 /// verified pixel-exact against official AtlasTool -Expand output.
 /// </summary>
 public sealed class AtlasFrameComposer : IDisposable

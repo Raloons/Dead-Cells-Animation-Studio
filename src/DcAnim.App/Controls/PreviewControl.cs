@@ -178,7 +178,7 @@ public sealed class PreviewControl : Control
         var source = new Rect(0, 0, frame.PixelSize.Width, frame.PixelSize.Height);
 
         // Onion skins (preview-only): neighbors beneath the current frame.
-        // Past = cool slate, future = warm sand — restrained and
+        // Past = cool slate, future = warm sand - restrained and
         // distinguishable without touching the approved palette.
         double ghost = Math.Clamp(OnionOpacity, 0.0, 0.6);
         if (ghost > 0)

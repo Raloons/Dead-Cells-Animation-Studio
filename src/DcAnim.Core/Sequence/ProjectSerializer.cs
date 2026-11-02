@@ -15,7 +15,7 @@ public sealed record ProjectValidation(IReadOnlyList<string> Errors, IReadOnlyLi
 /// (AS-M3: clips only) load directly with documented defaults (identity
 /// transforms, empty keyframe lists, no tracks).
 /// Asset references stay as paths (relative to the project file when
-/// practical) — never embedded artwork.
+/// practical) - never embedded artwork.
 /// </summary>
 public static class ProjectSerializer
 {

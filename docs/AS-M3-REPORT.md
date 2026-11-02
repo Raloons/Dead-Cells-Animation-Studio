@@ -1,8 +1,8 @@
-# AS-M3 Report — Animation Sequencing, Project Saving & Export
+# AS-M3 Report - Animation Sequencing, Project Saving & Export
 
 **Status: COMPLETE.** The studio is now a functional sequencing editor:
 multi-clip projects with per-clip speed, deterministic playback, `.dcanim`
-persistence, and PNG/GIF/sprite-sheet export — with preview and all
+persistence, and PNG/GIF/sprite-sheet export - with preview and all
 exporters sharing one timing model and one coordinate system.
 
 ## 1. Project model (`.dcanim`, versioned JSON)
@@ -24,7 +24,7 @@ exporters sharing one timing model and one coordinate system.
 - Project FPS (default 30) × per-clip speed multiplier. Native source rate
   is the documented 30 FPS assumption (shared with AS-M1).
 - Clip output frames `N = max(1, round(S · fps / (30 · v)))`; output frame
-  `k` shows source `min(S−1, ⌊k·S/N⌋)` — holds when slow, samples when
+  `k` shows source `min(S−1, ⌊k·S/N⌋)` - holds when slow, samples when
   fast, boundaries exact, no drift. Implemented once in
   `Core/Sequence/SequenceTiming` and reused by the composer, ruler labels
   and exporters.
@@ -76,7 +76,7 @@ exporters sharing one timing model and one coordinate system.
   B4@1.25×` = 26+11+22+13 = 72 frames), played across boundaries, scrubbed,
   stepped, saved `katana-combo.dcanim`, closed, reopened, exported PNG
   (72 files, RGBA, transparent), GIF (72 frames, 30 ms, loop) and sheet
-  (1218×1370 + metadata with exact boundaries) — all decoded with an
+  (1218×1370 + metadata with exact boundaries) - all decoded with an
   independent reader (PIL) and pixel-checked. Screenshots:
   `as-m3-sequence.png`, `as-m3-viewer.png`, `as-m3-combo.gif`; tutorial
   project committed as `docs/evidence/katana-combo.dcanim`.

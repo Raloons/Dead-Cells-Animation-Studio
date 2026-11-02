@@ -30,7 +30,7 @@ public sealed record ResolvedClip(
 /// Builds the playable/exportable form of a project: an
 /// <see cref="AnimationClip"/> whose frames are ordered source-frame
 /// references at the project FPS, so preview, scrubbing and all exporters
-/// share one timing model. Missing animations are skipped and reported —
+/// share one timing model. Missing animations are skipped and reported -
 /// never silently dropped without a trace.
 /// </summary>
 public static class SequenceComposer
@@ -78,7 +78,7 @@ public static class SequenceComposer
     /// <summary>
     /// Composes the full ordered frame list. Frames are shared references to
     /// the loader's clip frames (no pixel copies); durations are uniform at
-    /// the project FPS. The canvas is the max frame extent, frames centered —
+    /// the project FPS. The canvas is the max frame extent, frames centered -
     /// see <c>docs/AS-M3-REPORT.md</c> for the coordinate rationale.
     /// </summary>
     public static (AnimationClip Clip, IReadOnlyList<ResolvedClip> Resolved) Compose(

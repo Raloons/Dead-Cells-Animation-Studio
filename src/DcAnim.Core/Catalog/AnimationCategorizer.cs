@@ -7,7 +7,7 @@ namespace DcAnim.Core.Catalog;
 /// verified ID naming conventions from <c>atlas/beheaded.atlas</c> (572 IDs).
 /// Rules are intentionally conservative and documented; ambiguous IDs fall
 /// into <see cref="AnimationCategory.Other"/>. Precedence: Idle, then
-/// Attacks, then Movement — e.g. <c>idleGunA</c> is a stance (Idle), while
+/// Attacks, then Movement - e.g. <c>idleGunA</c> is a stance (Idle), while
 /// <c>blowgunAtkShoot</c> is an attack even though it implies locomotion-free
 /// aiming.
 /// <para/>

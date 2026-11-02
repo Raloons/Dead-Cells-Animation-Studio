@@ -11,7 +11,7 @@
         <StackPanel Spacing="4">
           <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
             <TextBlock Grid.Row="0" Grid.Column="0" Text="Animation" Classes="ws-prop-label"/>
-            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="ClipAnim" Classes="ws-prop-value" Text="—"/>
+            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="ClipAnim" Classes="ws-prop-value" Text="-"/>
             <TextBlock Grid.Row="1" Grid.Column="0" Text="Speed" Classes="ws-prop-label" VerticalAlignment="Center"/>
             <NumericUpDown Grid.Row="1" Grid.Column="1" x:Name="ClipSpeed" Minimum="0.25" Maximum="4"
                            Increment="0.25" FormatString="0.##x" Width="110" HorizontalAlignment="Left"
@@ -28,7 +28,7 @@
               <ComboBoxItem Content="2×" Tag="2"/>
             </ComboBox>
             <TextBlock Grid.Row="3" Grid.Column="0" Text="Frames" Classes="ws-prop-label"/>
-            <TextBlock Grid.Row="3" Grid.Column="1" x:Name="ClipFrames" Classes="ws-prop-value" Text="—"/>
+            <TextBlock Grid.Row="3" Grid.Column="1" x:Name="ClipFrames" Classes="ws-prop-value" Text="-"/>
             <TextBlock Grid.Row="4" Grid.Column="0" Text="Source In" Classes="ws-prop-label" VerticalAlignment="Center"/>
             <NumericUpDown Grid.Row="4" Grid.Column="1" x:Name="ClipTrimIn" Minimum="1" Maximum="100000"
                            FormatString="0" Width="110" HorizontalAlignment="Left"
@@ -45,7 +45,7 @@
                            FormatString="0" Width="110" HorizontalAlignment="Left"
                            ToolTip.Tip="Repeat the final displayed frame this many extra output frames"/>
             <TextBlock Grid.Row="8" Grid.Column="0" Text="Mapping" Classes="ws-prop-label"/>
-            <TextBlock Grid.Row="8" Grid.Column="1" x:Name="ClipMapping" Classes="ws-prop-value" FontSize="11" Text="—"/>
+            <TextBlock Grid.Row="8" Grid.Column="1" x:Name="ClipMapping" Classes="ws-prop-value" FontSize="11" Text="-"/>
           </Grid>
           <TextBlock Text="TRANSFORM" Classes="ws-panel-header" Margin="0,6,0,0"/>
           <views:TransformEditorView x:Name="ClipTransform"/>
@@ -108,7 +108,7 @@
             <TextBlock Grid.Row="4" Grid.Column="0" Text="Detect" Classes="ws-prop-label" VerticalAlignment="Center"/>
             <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Spacing="8">
               <CheckBox x:Name="WeaponNonBody" Content="Non-body is weapon"
-                        ToolTip.Tip="Treat anything that isn't body color as weapon — use for shovels and other bands"/>
+                        ToolTip.Tip="Treat anything that isn't body color as weapon - use for shovels and other bands"/>
               <NumericUpDown x:Name="WeaponBodyColor" Minimum="0" Maximum="255"
                              FormatString="0" Width="70" HorizontalAlignment="Left"
                              ToolTip.Tip="Body green channel to exclude (default 96)"/>
@@ -133,13 +133,13 @@
             <Button x:Name="WeaponExportButton" Classes="ws-tool" Content="Export plan…"
                     ToolTip.Tip="Save a BTD-compatible weapon plan JSON"/>
           </StackPanel>
-          <TextBlock Text="DONOR GALLERY — hover to preview" Classes="ws-panel-header" Margin="0,6,0,0"/>
+          <TextBlock Text="DONOR GALLERY - hover to preview" Classes="ws-panel-header" Margin="0,6,0,0"/>
           <TextBox x:Name="WeaponGallerySearch" Watermark="Filter weapons…"
                    ToolTip.Tip="Filter the weapon gallery by animation ID"/>
           <ListBox x:Name="WeaponGallery" Background="Transparent" Padding="0" Margin="0,4,0,0"
                    MaxHeight="220" SelectionMode="Single"
                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                   ToolTip.Tip="Hover a weapon to preview it on the current frame — click to choose it as donor">
+                   ToolTip.Tip="Hover a weapon to preview it on the current frame - click to choose it as donor">
             <ListBox.ItemTemplate>
               <DataTemplate>
                 <Grid ColumnDefinitions="48,*" Margin="0,1">
@@ -156,9 +156,9 @@
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>
-          <TextBlock x:Name="WeaponStatus" Classes="ws-prop-value" FontSize="11" Text="—" TextWrapping="Wrap"/>
+          <TextBlock x:Name="WeaponStatus" Classes="ws-prop-value" FontSize="11" Text="-" TextWrapping="Wrap"/>
           <TextBlock Text="POSE (per source frame)" Classes="ws-panel-header" Margin="0,6,0,0"/>
-          <TextBlock x:Name="WeaponFrameLabel" Classes="ws-prop-value" Text="—"/>
+          <TextBlock x:Name="WeaponFrameLabel" Classes="ws-prop-value" Text="-"/>
           <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
             <TextBlock Grid.Row="0" Grid.Column="0" Text="X" Classes="ws-prop-label" VerticalAlignment="Center"/>
             <NumericUpDown Grid.Row="0" Grid.Column="1" x:Name="WeaponX" Minimum="-2000" Maximum="2000" Increment="0.5" FormatString="0.##" Width="110" HorizontalAlignment="Left"/>
@@ -179,7 +179,7 @@
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="6">
             <Button x:Name="WeaponFlipButton" Classes="ws-tool" Content="Flip 180°"
-                    ToolTip.Tip="Rotate this frame's weapon 180° around its grip — fixes blade-in-hand cases"/>
+                    ToolTip.Tip="Rotate this frame's weapon 180° around its grip - fixes blade-in-hand cases"/>
             <Button x:Name="WeaponFlipAllButton" Classes="ws-tool" Content="Flip all 180°"
                     ToolTip.Tip="Rotate every posed frame 180° around its own grip"/>
           </StackPanel>
@@ -197,7 +197,7 @@
             <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" Classes="ws-prop-label" VerticalAlignment="Center"/>
             <TextBox Grid.Row="0" Grid.Column="1" x:Name="FxName"/>
             <TextBlock Grid.Row="1" Grid.Column="0" Text="Image" Classes="ws-prop-label"/>
-            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="FxImage" Classes="ws-prop-value" FontSize="11" Text="—"/>
+            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="FxImage" Classes="ws-prop-value" FontSize="11" Text="-"/>
             <TextBlock Grid.Row="2" Grid.Column="0" Text="Start frame" Classes="ws-prop-label" VerticalAlignment="Center"/>
             <NumericUpDown Grid.Row="2" Grid.Column="1" x:Name="FxStart" Minimum="0" Maximum="100000" Width="110" HorizontalAlignment="Left"/>
             <TextBlock Grid.Row="3" Grid.Column="0" Text="Duration" Classes="ws-prop-label" VerticalAlignment="Center"/>
@@ -226,7 +226,7 @@
             <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" Classes="ws-prop-label" VerticalAlignment="Center"/>
             <TextBox Grid.Row="0" Grid.Column="1" x:Name="AuName"/>
             <TextBlock Grid.Row="1" Grid.Column="0" Text="File" Classes="ws-prop-label"/>
-            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="AuFile" Classes="ws-prop-value" FontSize="11" Text="—"/>
+            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="AuFile" Classes="ws-prop-value" FontSize="11" Text="-"/>
             <TextBlock Grid.Row="2" Grid.Column="0" Text="Start (s)" Classes="ws-prop-label" VerticalAlignment="Center"/>
             <NumericUpDown Grid.Row="2" Grid.Column="1" x:Name="AuStart" Minimum="0" Maximum="3600" Increment="0.1" FormatString="0.##" Width="110" HorizontalAlignment="Left"/>
             <TextBlock Grid.Row="3" Grid.Column="0" Text="Trim (s)" Classes="ws-prop-label" VerticalAlignment="Center"/>
@@ -259,9 +259,9 @@
                          Increment="1" FormatString="0" Width="110" HorizontalAlignment="Left"
                          ToolTip.Tip="Sequence frame rate (output frames per second)"/>
           <TextBlock Grid.Row="2" Grid.Column="0" Text="Clips" Classes="ws-prop-label"/>
-          <TextBlock Grid.Row="2" Grid.Column="1" x:Name="SeqClips" Classes="ws-prop-value" Text="—"/>
+          <TextBlock Grid.Row="2" Grid.Column="1" x:Name="SeqClips" Classes="ws-prop-value" Text="-"/>
           <TextBlock Grid.Row="3" Grid.Column="0" Text="Total" Classes="ws-prop-label"/>
-          <TextBlock Grid.Row="3" Grid.Column="1" x:Name="SeqTotal" Classes="ws-prop-value" Text="—"/>
+          <TextBlock Grid.Row="3" Grid.Column="1" x:Name="SeqTotal" Classes="ws-prop-value" Text="-"/>
           <TextBlock Grid.Row="4" Grid.Column="0" Text="Onion skins" Classes="ws-prop-label" VerticalAlignment="Center"/>
           <CheckBox Grid.Row="4" Grid.Column="1" x:Name="OnionEnabled" Content="Show neighbors"
                     ToolTip.Tip="Preview-only ghost frames around the playhead (never exported)"/>

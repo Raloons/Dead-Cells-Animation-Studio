@@ -77,7 +77,7 @@ public sealed class SequenceClip
 /// <summary>
 /// Visual-effect overlay: an external transparent image placed on the
 /// sequence timeline. Referenced by path (relative to the project file when
-/// practical) — never embedded.
+/// practical) - never embedded.
 /// </summary>
 public sealed class EffectClip
 {
@@ -97,7 +97,7 @@ public sealed class EffectClip
 /// <summary>
 /// Audio overlay: an external WAV file placed on the sequence timeline.
 /// Times are seconds (project FPS maps them to frames for display).
-/// Audio is preview-only — never embedded in PNG/GIF/sheet exports.
+/// Audio is preview-only - never embedded in PNG/GIF/sheet exports.
 /// </summary>
 public sealed class AudioClip
 {

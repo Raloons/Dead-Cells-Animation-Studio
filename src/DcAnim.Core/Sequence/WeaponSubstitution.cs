@@ -2,7 +2,7 @@ namespace DcAnim.Core.Sequence;
 
 /// <summary>
 /// Per-frame weapon override stored on a sequence clip. Explicit runs and poses
-/// — auto-detect only fills them during editing. Renderer uses them verbatim.
+/// - auto-detect only fills them during editing. Renderer uses them verbatim.
 /// </summary>
 public sealed class WeaponFrameOverride
 {

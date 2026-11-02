@@ -5,17 +5,17 @@ install needed) or **build it yourself** from source.
 
 ---
 
-## Option 1 — Download the single-file `.exe` (easiest)
+## Option 1 - Download the single-file `.exe` (easiest)
 
 1. Open the repository's **Releases** page:
    https://github.com/Raloons/Dead-Cells-Animation-Studio/releases
 2. Under the latest release, download **`DeadCells.AnimationStudio.exe`**.
-3. Put it anywhere you like (Desktop, `C:\Tools\`, a USB stick — it does not
+3. Put it anywhere you like (Desktop, `C:\Tools\`, a USB stick - it does not
    matter, nothing is installed).
 4. **Double-click it.** That's it.
 
 There is nothing to install, no .NET runtime required, and no game files
-needed — the default Beheaded animation set is embedded in the executable and
+needed - the default Beheaded animation set is embedded in the executable and
 extracted to
 `%LOCALAPPDATA%\DeadCellsAnimationStudio\bundled\v1\` on first launch.
 
@@ -51,7 +51,7 @@ DeadCells.AnimationStudio.exe --bundled --audit C:\temp\as-audit
 
 ---
 
-## Option 2 — Build from source
+## Option 2 - Build from source
 
 Needed only if you want to modify the app or avoid SmartScreen.
 
@@ -136,5 +136,5 @@ These assets are **third-party copyrighted material belonging to Motion Twin /
 Evil Empire**. They are included here for fan modding and educational use only,
 and are **not** covered by this repository's MIT license, which applies only to
 the original application code and tools. See the **Disclaimer & Copyright
-Notice** in the [README](README.md) — if a rights holder asks for removal, the
+Notice** in the [README](README.md) - if a rights holder asks for removal, the
 project complies.

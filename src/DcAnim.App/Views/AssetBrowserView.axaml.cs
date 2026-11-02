@@ -129,7 +129,7 @@ public sealed partial class AssetBrowserView : UserControl
 
     /// <summary>
     /// Programmatic selection. Always routes through <see cref="RaiseSelected"/>
-    /// exactly once so the host loads the animation — list events are
+    /// exactly once so the host loads the animation - list events are
     /// suppressed during the sync to avoid double loads.
     /// </summary>
     public void Select(string id)

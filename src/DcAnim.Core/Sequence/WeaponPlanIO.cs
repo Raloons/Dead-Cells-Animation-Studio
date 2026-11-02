@@ -5,7 +5,7 @@ namespace DcAnim.Core.Sequence;
 
 /// <summary>
 /// BTD-compatible portable plan IO (native-weapon-composition/1). Studio is the
-/// editor; BTD is a consumer. No game assets are embedded — only provenance,
+/// editor; BTD is a consumer. No game assets are embedded - only provenance,
 /// runs, pivots and poses plus pixel digests for outfit guards.
 /// </summary>
 public static class WeaponPlanIO

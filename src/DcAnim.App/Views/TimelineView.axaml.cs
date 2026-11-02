@@ -149,7 +149,7 @@ public sealed partial class TimelineView : UserControl
         SeqTrack.Clips = null;
         SeqTrack.CurrentFrame = -1;
         LayoutTrack();
-        PositionText.Text = "—";
+        PositionText.Text = "-";
     }
 
     public void SetPosition(int frameIndex, int frameCount, double fps)
@@ -286,7 +286,7 @@ public sealed partial class TimelineView : UserControl
     {
         double fps = IsSequenceMode ? SeqTrack.Fps : Track.Fps;
         PositionText.Text = frameCount <= 0
-            ? "—"
+            ? "-"
             : $"Frame {frameIndex + 1} / {frameCount} · {TimelineMath.FormatTime(frameIndex, fps)}";
     }
 }

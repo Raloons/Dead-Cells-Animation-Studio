@@ -109,7 +109,7 @@ public sealed class UndoHistory
 /// Tracks a project through an editing session: all mutations (clips,
 /// transforms, keyframes, effects, audio, settings), snapshot undo/redo,
 /// file association and exact unsaved-change state (current JSON vs the
-/// saved snapshot — undoing back to the saved state clears the marker).
+/// saved snapshot - undoing back to the saved state clears the marker).
 /// </summary>
 public sealed class SequenceDocument
 {
@@ -308,7 +308,7 @@ public sealed class SequenceDocument
 
     /// <summary>
     /// End a group, but abandon it (no history entry) when nothing actually
-    /// changed — e.g. a no-op split or an empty delete. Returns whether an
+    /// changed - e.g. a no-op split or an empty delete. Returns whether an
     /// undo step was recorded.
     /// </summary>
     public bool EndGroupIfChanged()

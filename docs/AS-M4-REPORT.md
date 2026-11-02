@@ -1,8 +1,8 @@
-# AS-M4 Report — Animation Authoring, Keyframes, Effects & Audio
+# AS-M4 Report - Animation Authoring, Keyframes, Effects & Audio
 
 **Status: COMPLETE.** The sequence editor is now an authoring tool: editable
 transforms with Hold/Linear keyframes, independent effect layers, a WAV audio
-track with synchronized preview, and full undo/redo — all on the approved
+track with synchronized preview, and full undo/redo - all on the approved
 neutral UI, with preview and every exporter sharing one compositor.
 
 ## 1. Editing model (Core, UI-free)
@@ -11,7 +11,7 @@ neutral UI, with preview and every exporter sharing one compositor.
   Opacity 0..1, normalized Pivot, FlipH/V. Applied non-destructively;
   native BATL frames are never modified. Nearest-neighbor sampling keeps
   pixel art crisp. Matrix order `T(pos)·R·S·T(−pivot·size)`; unscaled
-  rotation is plain numeric lerp (no angle unwrapping — deterministic and
+  rotation is plain numeric lerp (no angle unwrapping - deterministic and
   documented).
 - **Keyframes**: per property, clip-local integer frames, Hold/Linear
   interpolation; before-first-key falls back to the base value; exact,
@@ -20,7 +20,7 @@ neutral UI, with preview and every exporter sharing one compositor.
   resolved native frame + effect layers (ordered by Layer) onto the
   sequence canvas with straight-alpha compositing. Exporters and preview
   consume identical RGBA frames (parity by design, tested pixel-for-pixel).
-- **Audio timeline** (`AudioTimeline`): pure math — audible clips at time t
+- **Audio timeline** (`AudioTimeline`): pure math - audible clips at time t
   with file offsets, trim/EOF clamping, mute; playback lives in the app
   (`AudioEngine`, NAudio) with per-clip gain and reconcile-on-tick sync
   (no duplicate voices across seeks/loops; missing files toast once and
@@ -37,7 +37,7 @@ neutral UI, with preview and every exporter sharing one compositor.
   skipped, not fatal.
 - Undo/redo is snapshot-based (JSON snapshots, cap 100): every mutation is
   covered uniformly, drags coalesce to one step (`BeginDrag`/`EndDrag`,
-  `AbortDrag` restores), and the dirty flag compares snapshots — undoing
+  `AbortDrag` restores), and the dirty flag compares snapshots - undoing
   back to the saved state clears `*`.
 
 ## 3. UI (approved design preserved)
@@ -47,7 +47,7 @@ neutral UI, with preview and every exporter sharing one compositor.
   clips/effects/audio in time, drag keyframes, drop-to-insert with indicator,
   context menus, Delete key. Same lattice/ruler/playhead/zoom/scroll.
 - Inspector: clip/effect/audio sections with transform numerics (commit on
-  focus loss — no undo spam), keyframe list with add-at-playhead, prev/next
+  focus loss - no undo spam), keyframe list with add-at-playhead, prev/next
   navigation, per-row delete; relink buttons for missing assets.
 - Viewport: drag-to-move the selection (coalesced undo), selection outline +
   pivot cross overlays that are never exported; drag on empty canvas pans.
@@ -77,7 +77,7 @@ never embedded). GIF keeps its documented quantization/timing behavior.
   shockwave at the B2 strike with scale/opacity keys, placed a generated
   880 Hz tone at 0.5 s, previewed with audio sync, performed edits, undid
   and redid them, saved, closed, reopened (all edits + references intact),
-  exported PNG (72), GIF (72 frames, 30 ms), sheet (1218×1370 + metadata) —
+  exported PNG (72), GIF (72 frames, 30 ms), sheet (1218×1370 + metadata) -
   all decoded with an independent reader. Missing-asset toast path exercised
   (screenshot shows it). Fixed during verification: New Project on an empty
   sequence no longer crashes (empty renders are rejected with a clear error;

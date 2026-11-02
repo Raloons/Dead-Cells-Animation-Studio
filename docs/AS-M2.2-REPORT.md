@@ -1,4 +1,4 @@
-# AS-M2.2 Report — Final UI Refinements
+# AS-M2.2 Report - Final UI Refinements
 
 **Status: COMPLETE.** Two targeted changes on the approved AS-M2.1 design;
 no restyling, no behavior changes beyond the specified items.
@@ -13,7 +13,7 @@ no restyling, no behavior changes beyond the specified items.
     `AutoLoad` now calls `Browser.Clear()` so that guidance is visible.
   - Errors (bad pak/atlas, failed animation load, auto-detect failure):
     transient top-center toast over the viewport, auto-dismissing after
-    6 s (`ShowToast` + single-shot timer). Reserved for problems only —
+    6 s (`ShowToast` + single-shot timer). Reserved for problems only -
     successful loads need no announcement (browser populates, top bar shows
     the source).
   - Non-critical progress (thumbnail prefetch): library footer line via
@@ -46,7 +46,7 @@ no restyling, no behavior changes beyond the specified items.
 - `dotnet build` + `Release publish`: 0 errors. `dotnet test`: **80/80**
   (78 prior + 2 `GridLines` tests; pixel-exact BATL test unchanged).
 - Real-app screenshots inspected: 1920×1080, 1366×768, 2560×1440, grid
-  view, min-zoom timeline —
+  view, min-zoom timeline -
   `as-m2.2-1920x1080.png`, `as-m2.2-1366x768.png`, `as-m2.2-2560x1440.png`,
   `as-m2.2-grid.png`, `as-m2.2-timeline-minzoom.png`.
 - Checked: no status bar remnant; grid alignment while scrubbing (playhead

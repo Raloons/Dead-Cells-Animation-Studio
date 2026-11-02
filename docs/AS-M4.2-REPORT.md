@@ -1,4 +1,4 @@
-# AS-M4.2 Report — Animation Splicing & Frame-Level Editing
+# AS-M4.2 Report - Animation Splicing & Frame-Level Editing
 
 **Status: COMPLETE.** Clips are now windows onto native animations: trim to
 arbitrary source ranges, split at the playhead, copy/cut/paste/delete frame
@@ -25,7 +25,7 @@ to a 0-based source frame: lead repeats of the first displayed frame, then
 resampled base frames (`SourceIndex`), then tail repeats of the final
 displayed frame; reversed flips the direction. The renderer
 (`SequenceCompositor.Render`), sprite-sheet metadata, viewport overlay,
-timeline labels and keyframe remapping all consume it — preview, exports,
+timeline labels and keyframe remapping all consume it - preview, exports,
 labels and undo agree by construction.
 
 `VisibleSourceFrames` clamps trims into the available count; `Resolve`
@@ -79,7 +79,7 @@ dropped and counted. Consequences:
 ## 5. Resampling caveat (honest limitation)
 
 Trims/splits/deletes/pastes are *source*-defined while outputs are
-*speed*-resampled. At 1:1 mappings (e.g. speed 1× at 30 fps — the splicing
+*speed*-resampled. At 1:1 mappings (e.g. speed 1× at 30 fps - the splicing
 sweet spot) every operation is output-exact (pinned by tests, including
 seam-continuous motion). With non-1× speeds or non-native FPS, re-resolved
 halves can differ by ±1 output frame at a seam; the timeline visibly shows
@@ -93,7 +93,7 @@ Any edit that changes total duration shifts effects (`StartFrame`) and audio
 (`StartSeconds`) at or after the edited clip's start by the delta; reverse,
 split and no-op edits shift nothing. FPS changes never ripple (grid change,
 not an edit). Absolute-point rule: everything at/after the point moves,
-including effects overlapping the edited clip — simple and predictable.
+including effects overlapping the edited clip - simple and predictable.
 
 ## 7. Onion skins (preview-only)
 
@@ -102,7 +102,7 @@ holds/reverse/boundaries, clamps at ends). Past = desaturated slate-blue,
 future = warm sand, drawn under the base frame at 0.15–0.6 opacity, 1–3 per
 side. Settings live in the workspace file (global view preference);
 per-frame neighbors recomputed every `RefreshFrame`, so scrubbing stays
-correct. Exporters consume `_seqRendered` directly — ghosts can never leak
+correct. Exporters consume `_seqRendered` directly - ghosts can never leak
 into PNG/GIF/sheet (asserted in-app).
 
 ## 8. Project format v3
@@ -132,7 +132,7 @@ never silent). Save is atomic (temp + move, pre-existing).
   inside `RefreshSequenceTimeline` against fresh resolves;
   (c) offscreen captures need a forced layout pass or templated-control
   pixels lag the model by a frame in headless runs (`UpdateLayout()` in
-  `AuditShot` — capture-only, no app behavior change).
+  `AuditShot` - capture-only, no app behavior change).
 - **Exports**: PNG/GIF/sheet asserted frame-count-exact on spliced
   (trimmed + reversed + held + split) sequences in-app; exporters share the
   composed frames (parity by construction).
@@ -157,9 +157,9 @@ never silent). Save is atomic (temp + move, pre-existing).
 ## 11. Reproduction (if anything regresses)
 
 - Cross-clip overlay crash class (AS-M4.1): select short clip, park playhead
-  in a longer clip, play — covered by `overlay.cross-clip-selection`.
-- No-op undo pollution: split at a clip edge repeatedly, then undo — the
+  in a longer clip, play - covered by `overlay.cross-clip-selection`.
+- No-op undo pollution: split at a clip edge repeatedly, then undo - the
   first undo must revert a real edit, never a phantom (covered).
-- Stale selection: select frames, New Project — highlight must clear
+- Stale selection: select frames, New Project - highlight must clear
   (covered by `splice.selection-state`).
 - Headless screenshots must call `UpdateLayout()` before capture.

@@ -25,7 +25,7 @@
                 Width="16" Height="16" Stretch="Uniform"/>
         </ToggleButton>
       </StackPanel>
-      <TextBlock x:Name="CountText" Classes="ws-panel-header" Text="—" Margin="0,6,0,0"/>
+      <TextBlock x:Name="CountText" Classes="ws-panel-header" Text="-" Margin="0,6,0,0"/>
     </DockPanel>
 
     <TextBlock DockPanel.Dock="Bottom" x:Name="StatusText" FontSize="11"

@@ -5,7 +5,7 @@ namespace DcAnim.Core.Sequence;
 /// weapon substitution. Native hero atlas pixels are indexed colors encoded as
 /// RGBA; in examined attack clips the visible weapon occupies a distinct green
 /// channel band (e.g. G=32 for pickaxe, G=159 for katana) with optional red
-/// sub-ranges. This is an editing aid that bakes explicit runs — the renderer
+/// sub-ranges. This is an editing aid that bakes explicit runs - the renderer
 /// never infers colors.
 /// </summary>
 public static class WeaponPalette

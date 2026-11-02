@@ -82,7 +82,7 @@ public static class TimelineMath
     /// Neighbor output frames for onion-skin overlays: up to
     /// <paramref name="count"/> frames on each side of
     /// <paramref name="frame"/>, clamped to <c>[0, totalFrames)</c> (no
-    /// wrap). Previous is ordered far-to-near, next near-to-far — paint
+    /// wrap). Previous is ordered far-to-near, next near-to-far - paint
     /// order, so nearer ghosts draw on top.
     /// </summary>
     public static (int[] Previous, int[] Next) OnionFrames(int frame, int totalFrames, int count)

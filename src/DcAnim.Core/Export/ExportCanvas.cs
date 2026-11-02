@@ -9,7 +9,7 @@ public sealed record ExportProgress(double Fraction, string Message);
 /// <summary>
 /// Shared canvas logic: the sequence canvas is the max frame extent; every
 /// frame is centered on it (integer pixel offsets). One coordinate system
-/// for preview and all exporters — see <c>docs/AS-M3-REPORT.md</c>.
+/// for preview and all exporters - see <c>docs/AS-M3-REPORT.md</c>.
 /// </summary>
 public static class ExportCanvas
 {

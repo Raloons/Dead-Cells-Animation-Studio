@@ -1,4 +1,4 @@
-# AS-M4.1 Stability Report — Workflow, State & Regression Audit
+# AS-M4.1 Stability Report - Workflow, State & Regression Audit
 
 **Status: COMPLETE.** Full application-wide stability audit following the
 user-reported Ctrl+Z crash on top of `9257e80`. All discovered crash classes
@@ -10,7 +10,7 @@ no game assets touched.
 ## 1. Root cause: the reported Ctrl+Z crash
 
 **Undo on an empty history was already safe** (`Undo()` returns early when
-`CanUndo` is false; extra Ctrl+Z/Ctrl+Y are no-ops — covered by
+`CanUndo` is false; extra Ctrl+Z/Ctrl+Y are no-ops - covered by
 `undo-redo-empty`, `undo.drain-all-plus-extra`, `redo.drain-all-plus-extra`).
 
 The crash family around it was **empty-sequence engine access during
@@ -41,7 +41,7 @@ selection/rebuild/transport transitions**:
   vanished mid-gesture instead of throwing.
 - Engine contract pinned by `EngineRejectsEmptyAndOutOfRange` (unit) and
   `engine.empty-clip-contract` + `viewer.empty-sequence-transport` (in-app):
-  UI guards, engine throws — both sides asserted.
+  UI guards, engine throws - both sides asserted.
 
 ## 2. Other crashes / defects found and fixed
 
@@ -53,16 +53,16 @@ selection/rebuild/transport transitions**:
 | 4 | Duplicate clip/effect/audio ids loaded without error | `CheckId` duplicate detection; `DuplicateIdsRejected` + `Serializer_RejectsDuplicateIds` tests |
 | 5 | Negative keyframe frames silently dropped on load | Kept and rejected by validation (`CorruptProjectRejected`, `Validate_RejectsCorruptAndDuplicateContent`) |
 | 6 | Dragging the viewport fired `MoveStarted` (opening a coalesce group) on mere press; a lost release/capture leaked the group and corrupted the next undo | Gated `MoveStarted`/`KeyframeDragStarted` to real movement past threshold; `DragCancelled`/`MoveCancelled` on capture loss and re-entrant press; host aborts the group |
-| 7 | `PreviewControl.OnPointerReleased` never fired `MoveFinished` for real drags (armed-flag inversion) — `EndDrag` skipped, coalesce leaked | Track `_moveStarted`; fire `MoveFinished` iff started |
+| 7 | `PreviewControl.OnPointerReleased` never fired `MoveFinished` for real drags (armed-flag inversion) - `EndDrag` skipped, coalesce leaked | Track `_moveStarted`; fire `MoveFinished` iff started |
 | 8 | Transform editor allowed scale 0.01..∞ / position ±∞ → canvas explosion or invisible frames | Clamp position ±20000, scale 0.01..64 (opacity was already 0..1) |
 | 9 | Oversize canvas (e.g. 5000px effect) would allocate gigabytes | `MaxCanvasDimension = 4096` refusal with clear error; `CompositionRejectsOversizeCanvas` test; `RebuildSequence` catches compose failures, keeps last valid state, toasts |
 | 10 | `RebuildSequence` built bitmaps into live state; a mid-compose throw left a half-built timeline | Build fully off to the side, commit atomically, dispose partials on failure |
 | 11 | Volume/mute changes left stale NAudio voices playing | Stop voices on volume/mute inspector changes (reconciled on next tick) |
-| 12 | `Save` wrote directly to the destination — crash mid-write corrupts the project | Atomic save: temp file in same directory + `File.Move(overwrite:true)` |
+| 12 | `Save` wrote directly to the destination - crash mid-write corrupts the project | Atomic save: temp file in same directory + `File.Move(overwrite:true)` |
 | 13 | Dead `MigrateV1ToV2` API suggested a migration path that doesn't exist | Removed; v1 loads directly with documented defaults |
 | 14 | Unhandled async/UI exceptions terminated the process silently | `CrashLog` + `AppDomain`/`TaskScheduler`/dispatcher handlers; error dialog with log path; app stays alive |
-| 15 | Clicking a library category pill (e.g. Idle) with a filtered-out selection crashed in `ApplyFilter` (`ArgumentOutOfRangeException` in Avalonia's selection model) — root cause was in-place mutation of the live `_filtered` ItemsSource plus clearing selection after the swap | `ApplyFilter` now clears selection while indices are valid → detaches source → rebuilds while detached → reattaches and restores; user-reported, crash log confirmed, regression-covered by `viewer.category-switch-with-selection` (58 in-app steps) |
-| 16 | Pressing play with 2+ clips of different lengths: per-frame `ArgumentOutOfRangeException('frameIndex')` storm from the selection overlay, forcing taskkill — overlay used the playhead clip's segment with the selected clip's animation, requesting out-of-range source frames | Overlay now uses the selected clip's own resolved segment and hides when the playhead is outside it; `CrashLog` gained a dialog storm guard (concurrent + 5 s cooldown) plus ms-resolution log names; user-reported, log confirmed, sensitivity-proven (`overlay.cross-clip-selection` fails on old code with the identical stack, passes on new) |
+| 15 | Clicking a library category pill (e.g. Idle) with a filtered-out selection crashed in `ApplyFilter` (`ArgumentOutOfRangeException` in Avalonia's selection model) - root cause was in-place mutation of the live `_filtered` ItemsSource plus clearing selection after the swap | `ApplyFilter` now clears selection while indices are valid → detaches source → rebuilds while detached → reattaches and restores; user-reported, crash log confirmed, regression-covered by `viewer.category-switch-with-selection` (58 in-app steps) |
+| 16 | Pressing play with 2+ clips of different lengths: per-frame `ArgumentOutOfRangeException('frameIndex')` storm from the selection overlay, forcing taskkill - overlay used the playhead clip's segment with the selected clip's animation, requesting out-of-range source frames | Overlay now uses the selected clip's own resolved segment and hides when the playhead is outside it; `CrashLog` gained a dialog storm guard (concurrent + 5 s cooldown) plus ms-resolution log names; user-reported, log confirmed, sensitivity-proven (`overlay.cross-clip-selection` fails on old code with the identical stack, passes on new) |
 
 ## 3. Workflow coverage matrix
 
@@ -138,7 +138,7 @@ verified in-app); unbounded fuzzing (deliberately out of scope).
   "No animation loaded", drop-target hint, no stale frame), `audit-02-
   populated.png`, `audit-final-state.png` (populated timeline renders,
   transport advances). One screenshot caught a transitional subtitle string
-  while the timeline already showed the new clip — cosmetic refresh timing
+  while the timeline already showed the new clip - cosmetic refresh timing
   only; no stale selection or crash, invariants held. Noted as a watch item,
   not a defect.
 - Export outputs from the audit (`exp-png/`, `exp.gif`, `exp-sheet.png +
@@ -153,7 +153,7 @@ verified in-app); unbounded fuzzing (deliberately out of scope).
   degrades gracefully without a device.
 - Human-dialog paths (file pickers, discard prompt, export dialog cancel,
   help dialogs, OS window chrome) are code-inspected, not clicked in this
-  pass — handlers are straight-line early-returns with no state mutation
+  pass - handlers are straight-line early-returns with no state mutation
   before confirmation.
 - Single effect-lane visual, GIF 256-color/10 ms steps, no native BATL
   export: unchanged AS-M4 limitations, out of scope for a stability

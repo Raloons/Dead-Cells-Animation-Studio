@@ -35,7 +35,7 @@
       </StackPanel>
 
       <TextBlock Text="ESTIMATE" Classes="ws-panel-header"/>
-      <TextBlock x:Name="EstimateText" Classes="ws-prop-value" Text="—"/>
+      <TextBlock x:Name="EstimateText" Classes="ws-prop-value" Text="-"/>
 
       <ProgressBar x:Name="ProgressBar" Minimum="0" Maximum="1" Height="6" IsVisible="False"/>
       <TextBlock x:Name="ResultText" FontSize="12" Foreground="{StaticResource WsTextSecondary}"

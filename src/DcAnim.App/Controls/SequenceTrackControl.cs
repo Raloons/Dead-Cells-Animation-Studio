@@ -13,7 +13,7 @@ namespace DcAnim.App.Controls;
 /// Multi-lane sequence track: animation clips, one effect lane, one audio lane
 /// (with waveform), keyframe diamonds on the selected item, playhead, and the
 /// shared frame lattice. Selection is neutral; only the hit concept (viewer
-/// filmstrip) keeps functional color — sequence markers are monochrome.
+/// filmstrip) keeps functional color - sequence markers are monochrome.
 /// </summary>
 public sealed class SequenceTrackControl : Control
 {
