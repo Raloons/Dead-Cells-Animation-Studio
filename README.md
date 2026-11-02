@@ -3,6 +3,15 @@
 A standalone Windows desktop application for viewing, studying and inspecting
 genuine **Dead Cells** hero animations outside the game.
 
+## Disclaimer & Copyright Notice
+
+**Dead Cells Animation Studio** is a free, open-source, fan-made project designed to repurpose, edit, and customize existing animations from *Dead Cells*. The goal of this project is to provide a tool for experimenting with and modifying animations for personal use, modding, and creative projects.
+**I do not own, nor do I claim ownership of, any original animations, sprites, artwork, characters, or other copyrighted assets from Dead Cells.** All rights to these assets belong to their respective copyright holders, including Motion Twin and Evil Empire where applicable.
+This project is not affiliated with, endorsed by, or officially associated with Motion Twin, Evil Empire, or any other rights holders.
+The software is developed and shared openly for non-commercial, educational, and modding purposes. Its open-source status applies to the original code and tools developed for this project, not to third-party copyrighted assets.
+I fully respect the intellectual property rights of the original creators. If any copyright holder or authorized representative requests that this project, or any copyrighted material included within it, be removed, **I will comply with the request and take the necessary action, including removing the repository entirely if requested.**
+This project exists purely out of appreciation for Dead Cells and its animation work, with no intention of infringing upon the rights of its creators.
+
 ![Running application](docs/evidence/app-mainwindow.png)
 
 AS-M1 (this milestone) delivers a launchable app with a real native animation
@@ -38,17 +47,6 @@ common paths, no hardcoded usernames) and falls back to the bundled set. You can
 always use **File > Open res.pak…** or **File > Open extracted atlas folder…**
 (a folder containing `beheaded.atlas` plus its page PNGs, as produced by the
 official `AtlasTool -Expand`).
-
-### Bundled game assets
-
-`bundled/beheaded/` contains the default-outfit `beheaded.atlas` and its three
-page PNGs, extracted unmodified from Dead Cells v35. These assets are
-**© Motion Twin / Evil Empire** and are included here **with the developers'
-permission**. They are *not* covered by this repository's MIT license, which
-applies only to the application source. Outfit-specific atlas sets are not
-bundled — load your own `res.pak` to access them.
-
-Evidence capture (used for the screenshots above):
 
 ```powershell
 dotnet run --project src/DcAnim.App -- --evidence <output-dir>
