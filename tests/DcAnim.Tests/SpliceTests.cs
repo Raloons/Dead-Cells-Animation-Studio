@@ -470,7 +470,7 @@ public sealed class SpliceTests
     {
         string path = Path.Combine(FindRepoRoot(), "docs", "evidence", "katana-splice.dcanim");
         var loaded = ProjectSerializer.Load(path);
-        Assert.Equal(3, loaded.Version);
+        Assert.Equal(SequenceProject.CurrentVersion, loaded.Version);
         Assert.Equal(4, loaded.Clips.Count);
         Assert.Equal("AtkKatanaA", loaded.Clips[0].AnimationId);
         Assert.Equal(0, loaded.Clips[0].SourceFirst);
@@ -507,7 +507,7 @@ public sealed class SpliceTests
         {
             ProjectSerializer.Save(doc.Project, path);
             var loaded = ProjectSerializer.Load(path);
-            Assert.Equal(3, loaded.Version);
+            Assert.Equal(SequenceProject.CurrentVersion, loaded.Version);
             var lc = Assert.Single(loaded.Clips);
             Assert.Equal(1, lc.SourceFirst);
             Assert.Equal(9, lc.SourceLast);
@@ -528,7 +528,7 @@ public sealed class SpliceTests
             File.WriteAllText(path,
                 """{"format":"dcanim","version":1,"name":"Legacy","fps":30,"clips":[{"id":"c1","animation":"A","speed":1}]}""");
             var loaded = ProjectSerializer.Load(path);
-            Assert.Equal(3, loaded.Version);
+            Assert.Equal(SequenceProject.CurrentVersion, loaded.Version);
             var lc = Assert.Single(loaded.Clips);
             Assert.Equal(0, lc.SourceFirst);
             Assert.Null(lc.SourceLast);

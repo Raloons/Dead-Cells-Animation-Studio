@@ -55,6 +55,20 @@ public sealed partial class MainWindow : Window
     private readonly Dictionary<string, float[]> _waveforms = new(StringComparer.OrdinalIgnoreCase);
     private readonly Stopwatch _dragThrottle = new();
     private bool _closingConfirmed;
+    private SequenceTiming.SpliceMap? _trimAnchorMap;
+    private int _trimAnchorStart;
+    private int _trimAnchorFirst;
+    private int _trimAnchorLast;
+    private bool _trimAnchorValid;
+
+    // Weapon substitution editing state.
+    private int _weaponSourceFrame = -1;
+    private bool _weaponMove;
+    private WeaponPose? _weaponDragBase;
+    private int _weaponDragSrc = -1;
+    private WriteableBitmap? _donorHoverBmp;
+    private string? _donorHoverId;
+    private readonly Stopwatch _donorHoverThrottle = new();
 
     // Frame-level editing state (global output frames, end-exclusive).
     private int _frameSelStart = -1;
@@ -66,6 +80,21 @@ public sealed partial class MainWindow : Window
         _loader!.Catalog.GetFrameRegions(animationId).Count;
 
     private Func<string, int> SourceCounter => SourceCount;
+
+    private int EstimateLibraryOutputs(string animationId)
+    {
+        if (_loader is null)
+            return 8;
+        try
+        {
+            int sources = SourceCount(animationId);
+            return SequenceTiming.ClipOutputFrames(Math.Max(1, sources), 1.0, _doc.Project.Fps, 0, 0);
+        }
+        catch
+        {
+            return 8;
+        }
+    }
 
     private AnimationClip? ActiveClip => _seqMode ? _seqClip : _clip;
     private int ActiveFrameCount => ActiveClip?.FrameCount ?? 0;
@@ -93,6 +122,7 @@ public sealed partial class MainWindow : Window
         SequenceModeButton.IsCheckedChanged += (_, _) => { if (SequenceModeButton.IsChecked == true) SetSequenceMode(true); };
 
         Timeline.ScrubRequested += f => { if (CanTransport) { _engine.Scrub(f); RefreshFrame(); } };
+        Timeline.SetLibraryEstimator(EstimateLibraryOutputs);
         Timeline.SeqClipSelected += OnSeqClipSelected;
         Timeline.SeqClipMoved += (id, i) => { _doc.MoveClip(id, i); AfterStructuralEdit(); };
         Timeline.SeqLibraryDrop += (animId, i) =>
@@ -136,9 +166,31 @@ public sealed partial class MainWindow : Window
                 ShowToast(ex.Message);
             }
         };
-        Timeline.SeqTrimDragStarted += (_, _) => _doc.BeginDrag("Trim clip");
+        Timeline.SeqTrimDragStarted += (id, _) =>
+        {
+            _doc.BeginDrag("Trim clip");
+            // Anchor the trim to the drag-start mapping. Recomputing from the
+            // live resolved segment on every mouse move feeds back: shrinking
+            // the clip changes OutputFrames/StartFrame, so the same cursor X
+            // maps to a different source and collapses to one frame.
+            _trimAnchorValid = false;
+            var anchor = _seqResolved.FirstOrDefault(x => x.Clip.Id == id);
+            if (anchor is not null && _loader is not null)
+            {
+                try
+                {
+                    int count = SourceCount(anchor.Clip.AnimationId);
+                    _trimAnchorMap = anchor.Map;
+                    _trimAnchorStart = anchor.StartFrame;
+                    _trimAnchorFirst = anchor.SourceFirst;
+                    _trimAnchorLast = anchor.SourceFirst + anchor.SourceFrames - 1;
+                    _trimAnchorValid = count > 0 && anchor.SourceFrames > 0;
+                }
+                catch (KeyNotFoundException) { }
+            }
+        };
         Timeline.SeqTrimming += OnTrimming;
-        Timeline.SeqTrimDragFinished += () => { _doc.EndDrag(); AfterStructuralEdit(); RefreshFrame(); };
+        Timeline.SeqTrimDragFinished += () => { _trimAnchorValid = false; _doc.EndDrag(); AfterStructuralEdit(); RefreshFrame(); };
         Timeline.SeqFrameRangeSelected += SetFrameSelection;
         Timeline.SeqSeekRequested += g =>
         {
@@ -166,7 +218,7 @@ public sealed partial class MainWindow : Window
         Timeline.SeqKeyframeMoved += (p, a, b, fx) => MoveSelectedKeyframeTo(b);
         Timeline.SeqKeyframeDragStarted += () => _doc.BeginDrag("Move keyframe");
         Timeline.SeqKeyframeDragFinished += () => { _doc.EndDrag(); RebuildSequence(); };
-        Timeline.SeqDragCancelled += () => { _doc.AbortDrag(); RebuildSequence(); RefreshFrame(); };
+        Timeline.SeqDragCancelled += () => { _trimAnchorValid = false; _doc.AbortDrag(); RebuildSequence(); RefreshFrame(); };
         Viewport.Preview.MoveStarted += OnViewportDragStart;
         Viewport.Preview.MoveDelta += OnViewportMove;
         Viewport.Preview.MoveFinished += OnViewportDragEnd;
@@ -215,6 +267,23 @@ public sealed partial class MainWindow : Window
         SeqInspector.AudioMutedChanged += m => { if (_seqTarget == SeqTargetKind.Audio) { _doc.SetAudioMuted(_seqTargetId, m); _audio.StopAll(); RebuildSequence(); } };
         SeqInspector.AudioRelinkRequested += async () => await RelinkAudioAsync();
         SeqInspector.AudioRemoveRequested += () => { if (_seqTarget == SeqTargetKind.Audio) { _doc.RemoveAudio(_seqTargetId); AfterStructuralEdit(); } };
+        SeqInspector.WeaponEnabledChanged += enabled => SetWeaponEnabled(enabled);
+        SeqInspector.WeaponPickDonorRequested += UseLibraryDonor;
+        SeqInspector.WeaponAutoRequested += AutoDetectWeapon;
+        SeqInspector.WeaponClearRequested += () => { if (_seqTarget == SeqTargetKind.Clip) { _doc.SetClipWeapon(_seqTargetId, null); _weaponSourceFrame = -1; RebuildSequence(); RefreshSequenceInspector(); } };
+        SeqInspector.WeaponImportRequested += async () => await ImportWeaponPlanAsync();
+        SeqInspector.WeaponExportRequested += async () => await ExportWeaponPlanAsync();
+        SeqInspector.WeaponFrameStepRequested += StepWeaponFrame;
+        SeqInspector.WeaponPoseApplied += pose => ApplyWeaponPose(pose);
+        SeqInspector.WeaponFlipRequested += () => FlipWeapon(all: false);
+        SeqInspector.WeaponFlipAllRequested += () => FlipWeapon(all: true);
+        SeqInspector.WeaponMoveChanged += move => _weaponMove = move;
+        SeqInspector.WeaponBehindChanged += behind => SetWeaponFlag(behind, null, null, null);
+        SeqInspector.WeaponPreserveChanged += preserve => SetWeaponFlag(null, preserve, null, null);
+        SeqInspector.WeaponNonBodyChanged += nonBody => SetWeaponFlag(null, null, nonBody, null);
+        SeqInspector.WeaponBodyColorChanged += color => SetWeaponFlag(null, null, null, color);
+        SeqInspector.WeaponDonorHovered += OnDonorHover;
+        SeqInspector.WeaponDonorPicked += id => SeqInspector.SetDonor(id);
         Viewport.Preview.DoubleTapped += (_, _) => FitPreview();
 
         OpenPakItem.Click += async (_, _) => await OpenPakAsync();
@@ -336,6 +405,7 @@ public sealed partial class MainWindow : Window
         _engine.Unload();
         _clip = null;
         ClearCache();
+        _nativeCache.Clear();
         if (prefer is not null)
             _preferredAnimation = prefer;
 
@@ -350,6 +420,7 @@ public sealed partial class MainWindow : Window
         Browser.SetCatalog(items);
         _thumbNotified = 0;
         _thumbs.Prefetch(items.Select(i => i.Id));
+        RefreshDonorGallery();
         Transport.SetEnabled(false);
         Viewport.SetTitle("No animation", "Select an animation from the library");
         Viewport.SetFrame(null);
@@ -357,6 +428,11 @@ public sealed partial class MainWindow : Window
         Timeline.Clear();
         SourceText.Text = loader.SourceDescription;
         Browser.Select(_preferredAnimation);
+        // Resync sequence resolution with the new catalog. The overlay uses
+        // _seqResolved source indexes with the current loader; without this,
+        // a stale segment can request a frame index that is out of range for
+        // the new atlas and crash preview on the UI thread.
+        RebuildSequence();
     }
 
     private void OnThumbnailsChanged()
@@ -366,6 +442,11 @@ public sealed partial class MainWindow : Window
             if (_thumbs is null || _loader is null)
                 return;
             Browser.ForEachItem(item =>
+            {
+                if (item.Thumbnail is null)
+                    item.Thumbnail = _thumbs.TryGet(item.Id);
+            });
+            SeqInspector.ForEachDonorItem(item =>
             {
                 if (item.Thumbnail is null)
                     item.Thumbnail = _thumbs.TryGet(item.Id);
@@ -422,6 +503,14 @@ public sealed partial class MainWindow : Window
     {
         if (_loader is null)
             return;
+        // In sequence mode the library is a drag source, not a viewer load.
+        // Loading the viewer clip here would refit the shared timeline zoom
+        // on every press-to-drag. Remember the choice and leave zoom alone.
+        if (_seqMode)
+        {
+            _preferredAnimation = id;
+            return;
+        }
         try
         {
             _clip = _loader.LoadClip(id, _fps);
@@ -661,9 +750,28 @@ public sealed partial class MainWindow : Window
             // Only overlay while the playhead is inside the selected clip.
             if (g < r.StartFrame || g >= r.StartFrame + r.OutputFrames)
                 return;
+            if (_loader is null)
+                return;
             int local = g - r.StartFrame;
-            var native = _nativeCache.Get(_loader!, clip.AnimationId,
-                r.Map.SourceAt(local), _doc.Project.Fps);
+            int src;
+            try
+            {
+                src = r.Map.SourceAt(local);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return;
+            }
+            ClipFrame native;
+            try
+            {
+                native = _nativeCache.Get(_loader, clip.AnimationId, src, _doc.Project.Fps);
+            }
+            catch (Exception ex) when (ex is ArgumentOutOfRangeException ||
+                ex is KeyNotFoundException || ex is InvalidDataException)
+            {
+                return;
+            }
             var t = clip.EvaluateAt(local);
             var (x, y, w, h) = TransformLayout.MapRect(native.Width, native.Height, t,
                 _seqRendered.Width, _seqRendered.Height);
@@ -1145,8 +1253,13 @@ public sealed partial class MainWindow : Window
         }
         else if (_clip is not null)
         {
-            _engine.Load(_clip);
-            _engine.Pause();
+            if (_clip.Id != _preferredAnimation && _loader is not null)
+                SelectAnimation(_preferredAnimation);
+            else
+            {
+                _engine.Load(_clip);
+                _engine.Pause();
+            }
         }
         else
         {
@@ -1553,13 +1666,67 @@ public sealed partial class MainWindow : Window
             if (r is null || _loader is null)
                 return;
             int count = SourceCount(r.Clip.AnimationId);
-            int local = Math.Clamp(globalFrame - r.StartFrame, 0, Math.Max(0, r.OutputFrames - 1));
-            int src = r.Map.SourceAt(local);
-            int resolvedLast = r.SourceFirst + r.SourceFrames - 1;
-            if (isLeft)
-                _doc.SetTrim(clipId, Math.Min(src, resolvedLast), r.Clip.SourceLast, count);
+            var clip = r.Clip;
+            double speed = clip.Speed;
+            double fps = _doc.Project.Fps;
+            int lead = Math.Max(0, clip.LeadHoldFrames);
+            int tail = Math.Max(0, clip.TailHoldFrames);
+            if (_trimAnchorValid && _trimAnchorMap is { } anchorMap)
+            {
+                int anchorEnd = _trimAnchorStart + anchorMap.TotalOutputs - 1;
+                if (isLeft)
+                {
+                    if (globalFrame >= _trimAnchorStart)
+                    {
+                        int local = Math.Clamp(globalFrame - _trimAnchorStart, 0, Math.Max(0, anchorMap.TotalOutputs - 1));
+                        int src = anchorMap.SourceAt(local);
+                        _doc.SetTrim(clipId, Math.Min(src, _trimAnchorLast), clip.SourceLast, count);
+                    }
+                    else
+                    {
+                        // Extend left: grow the visible range to reach the cursor.
+                        int desiredOutputs = anchorEnd - globalFrame + 1;
+                        int maxVisible = _trimAnchorLast + 1;
+                        int maxOutputs = SequenceTiming.ClipOutputFrames(Math.Max(1, maxVisible), speed, fps, lead, tail);
+                        desiredOutputs = Math.Clamp(desiredOutputs, 1, Math.Max(1, maxOutputs));
+                        int baseOutputs = Math.Max(1, desiredOutputs - lead - tail);
+                        int desiredVisible = Math.Clamp((int)Math.Round(baseOutputs * SequenceTiming.NativeFps * speed / fps, MidpointRounding.AwayFromZero), 1, Math.Max(1, maxVisible));
+                        int newFirst = Math.Clamp(_trimAnchorLast - desiredVisible + 1, 0, _trimAnchorLast);
+                        _doc.SetTrim(clipId, newFirst, clip.SourceLast, count);
+                    }
+                }
+                else
+                {
+                    if (globalFrame <= anchorEnd)
+                    {
+                        int local = Math.Clamp(globalFrame - _trimAnchorStart, 0, Math.Max(0, anchorMap.TotalOutputs - 1));
+                        int src = anchorMap.SourceAt(local);
+                        _doc.SetTrim(clipId, _trimAnchorFirst, Math.Max(src, _trimAnchorFirst), count);
+                    }
+                    else
+                    {
+                        // Extend right: grow the visible range to reach the cursor.
+                        int desiredOutputs = globalFrame - _trimAnchorStart + 1;
+                        int maxVisible = Math.Max(1, count - _trimAnchorFirst);
+                        int maxOutputs = SequenceTiming.ClipOutputFrames(maxVisible, speed, fps, lead, tail);
+                        desiredOutputs = Math.Clamp(desiredOutputs, 1, Math.Max(1, maxOutputs));
+                        int baseOutputs = Math.Max(1, desiredOutputs - lead - tail);
+                        int desiredVisible = Math.Clamp((int)Math.Round(baseOutputs * SequenceTiming.NativeFps * speed / fps, MidpointRounding.AwayFromZero), 1, maxVisible);
+                        int newLast = Math.Clamp(_trimAnchorFirst + desiredVisible - 1, _trimAnchorFirst, count - 1);
+                        _doc.SetTrim(clipId, _trimAnchorFirst, newLast, count);
+                    }
+                }
+            }
             else
-                _doc.SetTrim(clipId, r.Clip.SourceFirst, Math.Max(src, r.Clip.SourceFirst), count);
+            {
+                int local = Math.Clamp(globalFrame - r.StartFrame, 0, Math.Max(0, r.OutputFrames - 1));
+                int src = r.Map.SourceAt(local);
+                int resolvedLast = r.SourceFirst + r.SourceFrames - 1;
+                if (isLeft)
+                    _doc.SetTrim(clipId, Math.Min(src, resolvedLast), clip.SourceLast, count);
+                else
+                    _doc.SetTrim(clipId, clip.SourceFirst, Math.Max(src, clip.SourceFirst), count);
+            }
             RebuildSequence();
             RefreshFrame();
         }
@@ -2259,6 +2426,25 @@ public sealed partial class MainWindow : Window
     {
         if (!_seqMode)
             return;
+        // Weapon drag takes precedence when armed: move the donor pose, not the clip.
+        if (_weaponMove && _seqTarget == SeqTargetKind.Clip)
+        {
+            var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
+            if (clip?.Weapon is { Enabled: true })
+            {
+                var resolved = _seqResolved.FirstOrDefault(r => r.Clip.Id == clip.Id);
+                int src = CurrentWeaponSourceFrame(clip, resolved);
+                var frame = clip.Weapon.ForSource(src);
+                if (frame is not null)
+                {
+                    _weaponDragBase = frame.Pose;
+                    _weaponDragSrc = src;
+                    _moveThrottle.Restart();
+                    _doc.BeginDrag("Move weapon");
+                    return;
+                }
+            }
+        }
         _moveBase = _seqTarget switch
         {
             SeqTargetKind.Clip => _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId)?.BaseTransform,
@@ -2273,7 +2459,34 @@ public sealed partial class MainWindow : Window
 
     private void OnViewportMove(Vector total)
     {
-        if (_moveBase is null || !_seqMode)
+        if (!_seqMode)
+            return;
+        if (_weaponDragBase.HasValue)
+        {
+            var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
+            if (clip is null || clip.Weapon is null)
+            {
+                _weaponDragBase = null;
+                _doc.AbortDrag();
+                RebuildSequence();
+                return;
+            }
+            if (_moveThrottle.IsRunning && _moveThrottle.ElapsedMilliseconds < 40)
+                return;
+            _moveThrottle.Restart();
+            double wzoom = Math.Max(1.0, Viewport.CurrentZoom);
+            var b = _weaponDragBase.Value;
+            try
+            {
+                _doc.SetWeaponPoseDirect(_seqTargetId, _weaponDragSrc,
+                    b with { X = b.X + total.X / wzoom, Y = b.Y + total.Y / wzoom });
+            }
+            catch { return; }
+            RebuildSequence();
+            RefreshFrame();
+            return;
+        }
+        if (_moveBase is null)
             return;
         // The target may have been deleted mid-gesture (e.g. undo); abort cleanly.
         bool alive = _seqTarget switch
@@ -2314,6 +2527,15 @@ public sealed partial class MainWindow : Window
 
     private void OnViewportDragEnd()
     {
+        if (_weaponDragBase.HasValue)
+        {
+            _weaponDragBase = null;
+            _doc.EndDrag();
+            RebuildSequence();
+            RefreshFrame();
+            RefreshSequenceInspector();
+            return;
+        }
         if (_moveBase is null)
             return;
         _moveBase = null;
@@ -2342,6 +2564,7 @@ public sealed partial class MainWindow : Window
                     clip.BaseTransform, clip.Keyframes,
                     r.SourceFirst + 1, r.SourceFirst + r.SourceFrames, clipSources,
                     r.Reversed, r.TailHoldFrames);
+                SeqInspector.ShowWeapon(clip.Weapon, CurrentWeaponSourceFrame(clip, r), clip.Weapon?.Frames.Count ?? 0);
                 if (_seqKeyProp is { } prop)
                 {
                     var key = clip.Keyframes.FirstOrDefault(k => k.Property == prop && k.Frame == _seqKeyFrame);
@@ -2388,6 +2611,7 @@ public sealed partial class MainWindow : Window
                         clip.BaseTransform, clip.Keyframes,
                         r.SourceFirst + 1, r.SourceFirst + r.SourceFrames, SourceCountOrMinusOne(clip.AnimationId),
                         r.Reversed, r.TailHoldFrames);
+                    SeqInspector.ShowWeapon(clip.Weapon, CurrentWeaponSourceFrame(clip, r), clip.Weapon?.Frames.Count ?? 0);
                 }
                 else
                 {
@@ -2409,6 +2633,467 @@ public sealed partial class MainWindow : Window
             return -1;
         try { return SourceCount(animationId); }
         catch { return -1; }
+    }
+
+    // ---------- weapon substitution editing ----------
+
+    private int CurrentWeaponSourceFrame(SequenceClip clip, ResolvedClip? resolved = null)
+    {
+        // Prefer what you're actually looking at: when the playhead is inside
+        // the selected clip, that source frame wins over any cached stepping
+        // position. Otherwise fall back to the stepped frame, then the first pose.
+        if (resolved is not null && _seqMode && _seqClip is { FrameCount: > 0 })
+        {
+            int g = _engine.CurrentFrameIndex;
+            if (g >= resolved.StartFrame && g < resolved.StartFrame + resolved.OutputFrames)
+            {
+                try
+                {
+                    int src = resolved.Map.SourceAt(g - resolved.StartFrame);
+                    _weaponSourceFrame = src;
+                    return src;
+                }
+                catch { }
+            }
+        }
+        if (_weaponSourceFrame >= 0 && clip.Weapon?.ForSource(_weaponSourceFrame) is not null)
+            return _weaponSourceFrame;
+        return clip.Weapon?.Frames.FirstOrDefault()?.SourceFrame ?? clip.SourceFirst;
+    }
+
+    private void SetWeaponEnabled(bool enabled)
+    {
+        if (_seqTarget != SeqTargetKind.Clip || _loader is null)
+            return;
+        var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
+        if (clip is null)
+            return;
+        if (!enabled)
+        {
+            if (clip.Weapon is not null)
+            {
+                var off = SequenceDocument.CloneWeapon(clip.Weapon)!;
+                off.Enabled = false;
+                _doc.SetClipWeapon(clip.Id, off);
+                RebuildSequence();
+                RefreshSequenceInspector();
+            }
+            return;
+        }
+        if (clip.Weapon is { Enabled: true })
+            return;
+        AutoDetectWeapon();
+    }
+
+    private void UseLibraryDonor()
+    {
+        string id = Browser.SelectedId ?? _preferredAnimation;
+        if (string.IsNullOrWhiteSpace(id))
+            return;
+        SeqInspector.SetDonor(id);
+        ShowToast($"Donor set to '{id}' — click Auto-detect to build poses.");
+    }
+
+    private void AutoDetectWeapon()
+    {
+        if (_seqTarget != SeqTargetKind.Clip || _loader is null)
+        {
+            ShowToast("Select a clip on the timeline first.");
+            return;
+        }
+        var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
+        if (clip is null)
+            return;
+        string donorId = SeqInspector.WeaponDonorId;
+        if (string.IsNullOrWhiteSpace(donorId))
+            donorId = Browser.SelectedId ?? _preferredAnimation;
+        if (string.IsNullOrWhiteSpace(donorId))
+        {
+            ShowToast("Enter a donor animation ID first.");
+            return;
+        }
+        int donorFrame = Math.Max(0, SeqInspector.WeaponDonorFrameValue);
+        int bodyGreen = SeqInspector.WeaponBodyGreenValue;
+        int donorGreen = SeqInspector.WeaponDonorGreenValue;
+        bool nonBody = SeqInspector.WeaponNonBodyValue;
+        int bodyColor = SeqInspector.WeaponBodyColorValue;
+        try
+        {
+            var resolved = _seqResolved.FirstOrDefault(r => r.Clip.Id == clip.Id);
+            int first = resolved?.SourceFirst ?? clip.SourceFirst;
+            int count = resolved?.SourceFrames ?? SourceCountOrMinusOne(clip.AnimationId);
+            if (count <= 0)
+            {
+                int total = SourceCountOrMinusOne(clip.AnimationId);
+                if (total <= 0) { ShowToast($"Cannot resolve '{clip.AnimationId}'."); return; }
+                count = Math.Max(1, Math.Min(total - first, total));
+            }
+            int last = first + count - 1;
+            var bodies = new List<(int, RgbaImage)>();
+            for (int s = first; s <= last; s++)
+            {
+                try
+                {
+                    var f = _nativeCache.Get(_loader, clip.AnimationId, s, _doc.Project.Fps);
+                    bodies.Add((s, new RgbaImage(f.Width, f.Height, (byte[])f.Rgba.Clone())));
+                }
+                catch { }
+            }
+            if (bodies.Count == 0) { ShowToast("No decodable body frames."); return; }
+            int donorCount = SourceCountOrMinusOne(donorId);
+            if (donorCount <= 0) { ShowToast($"Donor '{donorId}' not found."); return; }
+            var df = _nativeCache.Get(_loader, donorId, Math.Clamp(donorFrame, 0, donorCount - 1), _doc.Project.Fps);
+            var donorImg = new RgbaImage(df.Width, df.Height, (byte[])df.Rgba.Clone());
+            var weapon = WeaponAutoDetect.Build(donorId, Math.Clamp(donorFrame, 0, donorCount - 1),
+                bodyGreen, donorGreen, bodies, donorImg,
+                preserveBody: true, behindBody: false, nonBodyMode: nonBody, bodyColorGreen: bodyColor);
+            _doc.SetClipWeapon(clip.Id, weapon);
+            _weaponSourceFrame = weapon.Frames[0].SourceFrame;
+            RebuildSequence();
+            RefreshSequenceInspector();
+            RefreshFrame();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Weapon auto-detect failed: {ex.Message}");
+        }
+    }
+
+    private void StepWeaponFrame(int delta)
+    {
+        var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
+        var w = clip?.Weapon;
+        if (w is null || w.Frames.Count == 0)
+            return;
+        int idx = w.Frames.FindIndex(f => f.SourceFrame == _weaponSourceFrame);
+        if (idx < 0) idx = 0;
+        idx = Math.Clamp(idx + delta, 0, w.Frames.Count - 1);
+        _weaponSourceFrame = w.Frames[idx].SourceFrame;
+        SeekToSourceFrame(clip!, _weaponSourceFrame);
+        RefreshSequenceInspector();
+    }
+
+    private void SeekToSourceFrame(SequenceClip clip, int src)
+    {
+        var r = _seqResolved.FirstOrDefault(x => x.Clip.Id == clip.Id);
+        if (r is null || _seqClip is null)
+            return;
+        for (int k = 0; k < r.OutputFrames; k++)
+        {
+            try
+            {
+                if (r.Map.SourceAt(k) == src)
+                {
+                    _engine.SeekFrame(r.StartFrame + k);
+                    RefreshFrame();
+                    return;
+                }
+            }
+            catch { }
+        }
+    }
+
+    private void ApplyWeaponPose(WeaponPose pose)
+    {
+        if (_seqTarget != SeqTargetKind.Clip)
+            return;
+        var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
+        if (clip?.Weapon is null)
+            return;
+        var resolved = _seqResolved.FirstOrDefault(r => r.Clip.Id == clip.Id);
+        int src = CurrentWeaponSourceFrame(clip, resolved);
+        var frame = clip.Weapon.ForSource(src);
+        if (frame is null)
+        {
+            ShowToast("Current source frame has no weapon pose — run Auto-detect first.");
+            return;
+        }
+        var next = SequenceDocument.CloneWeapon(clip.Weapon)!;
+        next.EnsureFrame(src).Pose = pose with { BehindBody = frame.Pose.BehindBody };
+        _doc.SetClipWeapon(clip.Id, next);
+        RebuildSequence();
+        RefreshSequenceInspector();
+        RefreshFrame();
+    }
+
+    private void SetWeaponFlag(bool? behind, bool? preserve, bool? nonBody, int? bodyColor)
+    {
+        if (_seqTarget != SeqTargetKind.Clip)
+            return;
+        var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
+        if (clip?.Weapon is null)
+            return;
+        var next = SequenceDocument.CloneWeapon(clip.Weapon)!;
+        if (behind.HasValue) next.BehindBody = behind.Value;
+        if (preserve.HasValue) next.PreserveBody = preserve.Value;
+        if (nonBody.HasValue) next.NonBodyMode = nonBody.Value;
+        if (bodyColor.HasValue) next.BodyColorGreen = bodyColor.Value;
+        _doc.SetClipWeapon(clip.Id, next);
+        RebuildSequence();
+    }
+
+    private static double NormalizeDegrees(double d)
+    {
+        while (d > 180) d -= 360;
+        while (d <= -180) d += 360;
+        return d;
+    }
+
+    private void FlipWeapon(bool all)
+    {
+        if (_seqTarget != SeqTargetKind.Clip)
+            return;
+        var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
+        if (clip?.Weapon is null || clip.Weapon.Frames.Count == 0)
+        {
+            ShowToast("Nothing to flip — run Auto-detect first.");
+            return;
+        }
+        var next = SequenceDocument.CloneWeapon(clip.Weapon)!;
+        if (all)
+        {
+            foreach (var f in next.Frames)
+                f.Pose = f.Pose with { Degrees = NormalizeDegrees(f.Pose.Degrees + 180) };
+        }
+        else
+        {
+            var resolved = _seqResolved.FirstOrDefault(r => r.Clip.Id == clip.Id);
+            int src = CurrentWeaponSourceFrame(clip, resolved);
+            var frame = next.ForSource(src);
+            if (frame is null)
+            {
+                ShowToast("Current source frame has no weapon pose — run Auto-detect first.");
+                return;
+            }
+            frame.Pose = frame.Pose with { Degrees = NormalizeDegrees(frame.Pose.Degrees + 180) };
+        }
+        _doc.SetClipWeapon(clip.Id, next);
+        RebuildSequence();
+        RefreshSequenceInspector();
+        RefreshFrame();
+    }
+
+    private void RefreshDonorGallery()
+    {
+        if (_loader is null)
+            return;
+        var attacks = _loader.Catalog.Animations
+            .Where(a => AnimationCategorizer.Categorize(a.Id) == AnimationCategory.Attacks)
+            .OrderBy(a => a.Id, StringComparer.Ordinal)
+            .Select(a => (a.Id, a.FrameCount))
+            .ToList();
+        SeqInspector.SetDonorGallery(attacks);
+        SeqInspector.ForEachDonorItem(item =>
+        {
+            if (_thumbs is not null && item.Thumbnail is null)
+                item.Thumbnail = _thumbs.TryGet(item.Id);
+        });
+    }
+
+    private void OnDonorHover(string? donorId)
+    {
+        if (string.IsNullOrEmpty(donorId))
+        {
+            ClearDonorHover();
+            return;
+        }
+        // Don't fight playback: hover preview is a paused-editing aid.
+        if (_engine.IsPlaying || !_seqMode || _loader is null)
+            return;
+        if (_seqTarget != SeqTargetKind.Clip)
+            return;
+        var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
+        if (clip is null)
+            return;
+        if (_donorHoverThrottle.IsRunning && _donorHoverThrottle.ElapsedMilliseconds < 120 &&
+            string.Equals(_donorHoverId, donorId, StringComparison.Ordinal))
+            return;
+        _donorHoverThrottle.Restart();
+        try
+        {
+            var resolved = _seqResolved.FirstOrDefault(r => r.Clip.Id == clip.Id);
+            int src = CurrentWeaponSourceFrame(clip, resolved);
+            int donorFrame = Math.Max(0, SeqInspector.WeaponDonorFrameValue);
+            int donorCount = SourceCountOrMinusOne(donorId);
+            if (donorCount <= 0)
+                return;
+            var bodyF = _nativeCache.Get(_loader, clip.AnimationId, src, _doc.Project.Fps);
+            var donorF = _nativeCache.Get(_loader, donorId, Math.Clamp(donorFrame, 0, donorCount - 1), _doc.Project.Fps);
+            var bodyImg = new RgbaImage(bodyF.Width, bodyF.Height, (byte[])bodyF.Rgba.Clone());
+            var donorImg = new RgbaImage(donorF.Width, donorF.Height, (byte[])donorF.Rgba.Clone());
+            bool nonBody = SeqInspector.WeaponNonBodyValue;
+            int bodyColor = SeqInspector.WeaponBodyColorValue;
+            int bodyGreen = SeqInspector.WeaponBodyGreenValue;
+            int donorGreen = SeqInspector.WeaponDonorGreenValue;
+            var shaft = nonBody ? NonBodyPoints(bodyImg, bodyColor) : BandPoints(bodyImg, bodyGreen);
+            var dpoints = nonBody ? NonBodyPoints(donorImg, bodyColor) : BandPoints(donorImg, donorGreen);
+            if (shaft.Count == 0 || dpoints.Count == 0)
+                return;
+            var pose = EstimateHoverPose(shaft, dpoints);
+            if (pose is null)
+                return;
+            var padded = new RgbaImage(bodyImg.Width, bodyImg.Height, new byte[bodyImg.Width * bodyImg.Height * 4]);
+            int cw = Math.Min(donorImg.Width, bodyImg.Width), ch = Math.Min(donorImg.Height, bodyImg.Height);
+            for (int y = 0; y < ch; y++)
+                Array.Copy(donorImg.Pixels, y * donorImg.Width * 4, padded.Pixels, y * bodyImg.Width * 4, cw * 4);
+            var appearance = new RgbaImage(bodyImg.Width, bodyImg.Height, new byte[bodyImg.Width * bodyImg.Height * 4]);
+            WeaponComposition.Restore(appearance, padded, WeaponPalette.ToRuns(dpoints));
+            var opaque = WeaponPalette.OpaqueRuns(bodyImg.Pixels, bodyImg.Width, bodyImg.Height);
+            var foreground = WeaponPalette.Subtract(opaque, shaft);
+            var composed = WeaponComposition.Compose(bodyImg, WeaponPalette.ToRuns(shaft),
+                appearance, pose.Value.PivotX, pose.Value.PivotY, pose.Value.Pose, foreground);
+            var bmp = FrameBitmap.FromRgba(composed.Pixels, composed.Width, composed.Height);
+            _donorHoverBmp?.Dispose();
+            _donorHoverBmp = bmp;
+            _donorHoverId = donorId;
+            Viewport.SetFrame(bmp);
+        }
+        catch
+        {
+            // Hover preview must never break editing; fall back to committed frame.
+        }
+    }
+
+    private void ClearDonorHover()
+    {
+        _donorHoverId = null;
+        if (_donorHoverBmp is not null)
+        {
+            _donorHoverBmp.Dispose();
+            _donorHoverBmp = null;
+            if (_seqMode)
+                RefreshFrame();
+        }
+    }
+
+    private static HashSet<(int X, int Y)> BandPoints(RgbaImage img, int green)
+    {
+        var set = new HashSet<(int X, int Y)>();
+        for (int y = 0; y < img.Height; y++)
+        for (int x = 0; x < img.Width; x++)
+        {
+            int i = (y * img.Width + x) * 4;
+            if (img.Pixels[i + 3] == 0) continue;
+            if (img.Pixels[i + 1] == green) set.Add((x, y));
+        }
+        return set;
+    }
+
+    private static HashSet<(int X, int Y)> NonBodyPoints(RgbaImage img, int bodyGreen)
+    {
+        var set = new HashSet<(int X, int Y)>();
+        for (int y = 0; y < img.Height; y++)
+        for (int x = 0; x < img.Width; x++)
+        {
+            int i = (y * img.Width + x) * 4;
+            if (img.Pixels[i + 3] == 0) continue;
+            if (img.Pixels[i + 1] != bodyGreen) set.Add((x, y));
+        }
+        return set;
+    }
+
+    private static (double PivotX, double PivotY, WeaponPose Pose)? EstimateHoverPose(
+        HashSet<(int X, int Y)> shaft, HashSet<(int X, int Y)> donor)
+    {
+        try
+        {
+            var (sDeg, sCx, sCy, _) = WeaponPalette.ShaftAxis(shaft);
+            var (dDeg, dCx, dCy, _) = WeaponPalette.ShaftAxis(donor);
+            var pose = WeaponPalette.EstimatePose(shaft, (sDeg, sCx, sCy), donor, (dDeg, dCx, dCy), (dCx, dCy));
+            return (dCx, dCy, pose);
+        }
+        catch
+        {
+            // Blob-like weapons with no shaft elongation: center the donor on the shaft centroid.
+            if (shaft.Count == 0 || donor.Count == 0)
+                return null;
+            double sx = shaft.Average(p => p.X + 0.5), sy = shaft.Average(p => p.Y + 0.5);
+            double dx = donor.Average(p => p.X + 0.5), dy = donor.Average(p => p.Y + 0.5);
+            return (dx, dy, new WeaponPose(sx, sy, 0));
+        }
+    }
+
+    private async Task ImportWeaponPlanAsync()
+    {
+        if (_seqTarget != SeqTargetKind.Clip)
+            return;
+        var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
+        if (clip is null || TopLevel.GetTopLevel(this)?.StorageProvider is not { } provider)
+            return;
+        var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Import weapon plan JSON",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { new FilePickerFileType("Weapon plan") { Patterns = new[] { "*.json" } } },
+        });
+        if (files.Count == 0)
+            return;
+        try
+        {
+            var (body, weapon, _, _, _) = WeaponPlanIO.Import(await File.ReadAllTextAsync(files[0].Path.LocalPath));
+            if (!string.Equals(body, clip.AnimationId, StringComparison.Ordinal))
+            {
+                ShowToast($"Plan body '{body}' does not match clip '{clip.AnimationId}'.");
+                return;
+            }
+            _doc.SetClipWeapon(clip.Id, weapon);
+            _weaponSourceFrame = weapon.Frames[0].SourceFrame;
+            RebuildSequence();
+            RefreshSequenceInspector();
+            RefreshFrame();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Weapon import failed: {ex.Message}");
+        }
+    }
+
+    private async Task ExportWeaponPlanAsync()
+    {
+        if (_seqTarget != SeqTargetKind.Clip || _loader is null)
+            return;
+        var clip = _doc.Project.Clips.FirstOrDefault(c => c.Id == _seqTargetId);
+        var w = clip?.Weapon;
+        if (clip is null || w is null || w.Frames.Count == 0)
+        {
+            ShowToast("Nothing to export — run Auto-detect first.");
+            return;
+        }
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } provider)
+            return;
+        var file = await provider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export BTD-compatible weapon plan",
+            SuggestedFileName = $"{clip.AnimationId}-weapon.json",
+            FileTypeChoices = new[] { new FilePickerFileType("Weapon plan") { Patterns = new[] { "*.json" } } },
+        });
+        if (file is null)
+            return;
+        try
+        {
+            var body0 = _nativeCache.Get(_loader, clip.AnimationId, w.Frames[0].SourceFrame, _doc.Project.Fps);
+            RgbaImage Resolve(string anim, int frame)
+            {
+                var f = _nativeCache.Get(_loader, anim, frame, _doc.Project.Fps);
+                if (f.Width == body0.Width && f.Height == body0.Height)
+                    return new RgbaImage(f.Width, f.Height, (byte[])f.Rgba.Clone());
+                // Pad smaller donor canvases top-left (BTD convention).
+                var padded = new RgbaImage(body0.Width, body0.Height, new byte[body0.Width * body0.Height * 4]);
+                int cw = Math.Min(f.Width, body0.Width), ch = Math.Min(f.Height, body0.Height);
+                for (int y = 0; y < ch; y++)
+                    Array.Copy(f.Rgba, y * f.Width * 4, padded.Pixels, y * body0.Width * 4, cw * 4);
+                if (anim == clip.AnimationId && (f.Width != body0.Width || f.Height != body0.Height))
+                    throw new InvalidDataException("Mixed body canvas sizes are not exportable.");
+                return padded;
+            }
+            string json = WeaponPlanIO.Export($"{clip.AnimationId}-studio", clip.AnimationId,
+                body0.Width, body0.Height, w, Resolve);
+            await File.WriteAllTextAsync(file.Path.LocalPath, json);
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Weapon export failed: {ex.Message}");
+        }
     }
 
     // ---------- project persistence ----------

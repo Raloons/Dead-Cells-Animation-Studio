@@ -54,6 +54,49 @@ public static class ProjectSerializer
         public bool Reversed { get; set; }
         public int LeadHoldFrames { get; set; }
         public int TailHoldFrames { get; set; }
+        public WeaponDto? Weapon { get; set; }
+    }
+
+    private sealed class WeaponDto
+    {
+        public bool Enabled { get; set; } = true;
+        public string DonorAnimation { get; set; } = string.Empty;
+        public int DonorFrame { get; set; }
+        public List<PixelRunDto> DonorRegion { get; set; } = new();
+        public double DonorPivotX { get; set; }
+        public double DonorPivotY { get; set; }
+        public bool BehindBody { get; set; }
+        public bool PreserveBody { get; set; } = true;
+        public int BodyMaskGreen { get; set; } = 32;
+        public int DonorMaskGreen { get; set; } = 159;
+        public bool NonBodyMode { get; set; }
+        public int BodyColorGreen { get; set; } = 96;
+        public List<WeaponFrameDto> Frames { get; set; } = new();
+    }
+
+    private sealed class WeaponFrameDto
+    {
+        public int SourceFrame { get; set; }
+        public List<PixelRunDto> Remove { get; set; } = new();
+        public List<PixelRunDto> Foreground { get; set; } = new();
+        public WeaponPoseDto Pose { get; set; } = new();
+    }
+
+    private sealed class PixelRunDto
+    {
+        public int Y { get; set; }
+        public int X { get; set; }
+        public int Length { get; set; }
+    }
+
+    private sealed class WeaponPoseDto
+    {
+        public double X { get; set; }
+        public double Y { get; set; }
+        public double Degrees { get; set; }
+        public double ScaleX { get; set; } = 1.0;
+        public double ScaleY { get; set; } = 1.0;
+        public bool BehindBody { get; set; }
     }
 
     private sealed class TransformDto
@@ -127,6 +170,28 @@ public static class ProjectSerializer
                 Reversed = c.Reversed,
                 LeadHoldFrames = c.LeadHoldFrames,
                 TailHoldFrames = c.TailHoldFrames,
+                Weapon = c.Weapon is null ? null : new WeaponDto
+                {
+                    Enabled = c.Weapon.Enabled,
+                    DonorAnimation = c.Weapon.DonorAnimationId,
+                    DonorFrame = c.Weapon.DonorFrame,
+                    DonorRegion = c.Weapon.DonorRegion.Select(r => new PixelRunDto { Y = r.Y, X = r.X, Length = r.Length }).ToList(),
+                    DonorPivotX = c.Weapon.DonorPivotX,
+                    DonorPivotY = c.Weapon.DonorPivotY,
+                    BehindBody = c.Weapon.BehindBody,
+                    PreserveBody = c.Weapon.PreserveBody,
+                    BodyMaskGreen = c.Weapon.BodyMaskGreen,
+                    DonorMaskGreen = c.Weapon.DonorMaskGreen,
+                    NonBodyMode = c.Weapon.NonBodyMode,
+                    BodyColorGreen = c.Weapon.BodyColorGreen,
+                    Frames = c.Weapon.Frames.Select(f => new WeaponFrameDto
+                    {
+                        SourceFrame = f.SourceFrame,
+                        Remove = f.Remove.Select(r => new PixelRunDto { Y = r.Y, X = r.X, Length = r.Length }).ToList(),
+                        Foreground = f.Foreground.Select(r => new PixelRunDto { Y = r.Y, X = r.X, Length = r.Length }).ToList(),
+                        Pose = new WeaponPoseDto { X = f.Pose.X, Y = f.Pose.Y, Degrees = f.Pose.Degrees, ScaleX = f.Pose.ScaleX, ScaleY = f.Pose.ScaleY, BehindBody = f.Pose.BehindBody },
+                    }).ToList(),
+                },
             }).ToList(),
             Effects = project.Effects.Select(e => new EffectDto
             {
@@ -196,7 +261,7 @@ public static class ProjectSerializer
             throw new InvalidDataException($"Project file '{path}' is empty or malformed.");
         if (!string.Equals(dto.Format, FormatTag, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"'{path}' is not a Dead Cells Animation Studio project (bad format tag).");
-        if (dto.Version != 1 && dto.Version != 2 && dto.Version != SequenceProject.CurrentVersion)
+        if (dto.Version != 1 && dto.Version != 2 && dto.Version != 3 && dto.Version != SequenceProject.CurrentVersion)
             throw new NotSupportedException(
                 $"Unsupported project version {dto.Version} (this build supports versions 1 through {SequenceProject.CurrentVersion}).");
 
@@ -253,6 +318,28 @@ public static class ProjectSerializer
             Reversed = c.Reversed,
             LeadHoldFrames = c.LeadHoldFrames,
             TailHoldFrames = c.TailHoldFrames,
+            Weapon = c.Weapon is null ? null : new WeaponClipOverride
+            {
+                Enabled = c.Weapon.Enabled,
+                DonorAnimationId = c.Weapon.DonorAnimation ?? string.Empty,
+                DonorFrame = c.Weapon.DonorFrame,
+                DonorRegion = c.Weapon.DonorRegion.Select(r => new PixelRun(r.Y, r.X, r.Length)).ToList(),
+                DonorPivotX = c.Weapon.DonorPivotX,
+                DonorPivotY = c.Weapon.DonorPivotY,
+                BehindBody = c.Weapon.BehindBody,
+                PreserveBody = c.Weapon.PreserveBody,
+                BodyMaskGreen = c.Weapon.BodyMaskGreen,
+                DonorMaskGreen = c.Weapon.DonorMaskGreen,
+                NonBodyMode = c.Weapon.NonBodyMode,
+                BodyColorGreen = c.Weapon.BodyColorGreen,
+                Frames = c.Weapon.Frames.Select(f => new WeaponFrameOverride
+                {
+                    SourceFrame = f.SourceFrame,
+                    Remove = f.Remove.Select(r => new PixelRun(r.Y, r.X, r.Length)).ToList(),
+                    Foreground = f.Foreground.Select(r => new PixelRun(r.Y, r.X, r.Length)).ToList(),
+                    Pose = new WeaponPose(f.Pose.X, f.Pose.Y, f.Pose.Degrees, f.Pose.ScaleX, f.Pose.ScaleY, f.Pose.BehindBody),
+                }).ToList(),
+            },
         }).ToList(),
         Effects = dto.Effects.Select(e => new EffectClip
         {
@@ -323,7 +410,9 @@ public static class ProjectSerializer
     public static ProjectValidation ValidateAnimations(SequenceProject project, Func<string, bool> exists)
     {
         var missing = project.Clips
-            .Select(c => c.AnimationId)
+            .SelectMany(c => new[] { c.AnimationId }
+                .Concat(c.Weapon is { Enabled: true } && !string.IsNullOrWhiteSpace(c.Weapon.DonorAnimationId)
+                    ? new[] { c.Weapon.DonorAnimationId } : Array.Empty<string>()))
             .Where(id => !string.IsNullOrWhiteSpace(id) && !exists(id))
             .Distinct(StringComparer.Ordinal)
             .ToList();
@@ -360,6 +449,7 @@ public static class ProjectSerializer
                 errors.Add($"clip {i} ('{clip.AnimationId}'): lead hold must be 0..{SequenceClip.MaxHoldFrames}");
             if (clip.TailHoldFrames < 0 || clip.TailHoldFrames > SequenceClip.MaxHoldFrames)
                 errors.Add($"clip {i} ('{clip.AnimationId}'): tail hold must be 0..{SequenceClip.MaxHoldFrames}");
+            ValidateWeapon(clip.Weapon, $"clip {i}", errors);
         }
         for (int i = 0; i < project.Effects.Count; i++)
         {
@@ -451,6 +541,32 @@ public static class ProjectSerializer
                 errors.Add($"{what}: transform must be finite");
                 return;
             }
+        }
+    }
+
+    private static void ValidateWeapon(WeaponClipOverride? w, string what, List<string> errors)
+    {
+        if (w is null) return;
+        if (string.IsNullOrWhiteSpace(w.DonorAnimationId))
+            errors.Add($"{what}: weapon donor animation missing");
+        if (w.DonorFrame < 0)
+            errors.Add($"{what}: weapon donor frame must not be negative");
+        if (w.BodyMaskGreen < 0 || w.BodyMaskGreen > 255 || w.DonorMaskGreen < 0 || w.DonorMaskGreen > 255)
+            errors.Add($"{what}: weapon mask channels must be 0..255");
+        if (w.BodyColorGreen < 0 || w.BodyColorGreen > 255)
+            errors.Add($"{what}: weapon body color must be 0..255");
+        if (!double.IsFinite(w.DonorPivotX) || !double.IsFinite(w.DonorPivotY))
+            errors.Add($"{what}: weapon donor pivot must be finite");
+        foreach (var f in w.Frames)
+        {
+            if (f.SourceFrame < 0) { errors.Add($"{what}: weapon source frame must not be negative"); break; }
+            foreach (var r in f.Remove.Concat(f.Foreground).Concat(w.DonorRegion))
+                if (r.Y < 0 || r.X < 0 || r.Length <= 0)
+                { errors.Add($"{what}: weapon runs must be non-negative"); break; }
+            var p = f.Pose;
+            if (!double.IsFinite(p.X) || !double.IsFinite(p.Y) || !double.IsFinite(p.Degrees) ||
+                !double.IsFinite(p.ScaleX) || !double.IsFinite(p.ScaleY) || p.ScaleX == 0 || p.ScaleY == 0)
+            { errors.Add($"{what}: weapon pose must be finite with nonzero scale"); break; }
         }
     }
 }

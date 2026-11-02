@@ -132,6 +132,7 @@ public sealed class SequenceTrackControl : Control
     private bool _dragging;
     private int _dropIndex = -1; // library drop target, -1 = none
     private double _dropX;        // internal-drag indicator position
+    private double _dragGhostX;   // cursor X for the in-progress clip ghost
     private const double TrimHandle = 6.0;
     private (string ClipId, bool IsLeft)? _hoverTrim;
     private string? _trimClipId;
@@ -209,6 +210,9 @@ public sealed class SequenceTrackControl : Control
     public int CurrentFrame { get => GetValue(CurrentFrameProperty); set => SetValue(CurrentFrameProperty, value); }
     public double PixelsPerFrame { get => GetValue(PixelsPerFrameProperty); set => SetValue(PixelsPerFrameProperty, Math.Clamp(value, 8.0, 128.0)); }
     public double Fps { get => GetValue(FpsProperty); set => SetValue(FpsProperty, value > 0 ? value : 30.0); }
+    /// <summary>Estimates output frames for a library animation id (speed 1).
+    /// Set by the host so external drags can show an append ghost.</summary>
+    public Func<string, int>? EstimateLibraryFrames { get; set; }
 
     public int TotalFrames => Clips?.Sum(c => c.FrameCount) ?? 0;
     public double TrackWidth => Math.Max(TimelineMath.TrackWidth(TotalFrames, PixelsPerFrame) + 8, 0);
@@ -218,7 +222,7 @@ public sealed class SequenceTrackControl : Control
         RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.None);
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
-        AddHandler(DragDrop.DragLeaveEvent, (_, _) => { _dropIndex = -1; InvalidateVisual(); });
+        AddHandler(DragDrop.DragLeaveEvent, (_, _) => { _dropIndex = -1; _externalDragId = null; _externalGhostFrames = 0; InvalidateVisual(); });
         AddHandler(DragDrop.DropEvent, OnDrop);
         BuildContextMenu();
     }
@@ -438,11 +442,43 @@ public sealed class SequenceTrackControl : Control
             }
         }
 
-        // Drop-insert indicator.
+        // Drop-insert indicator. Thicker and full-height so an append past
+        // the last clip is obvious instead of looking like dead space.
         if (_dropIndex >= 0 || _dragging)
         {
             double bx = _dropIndex >= 0 ? BoundaryX(_dropIndex) : _dropX;
             context.DrawLine(InsertPen, new Point(bx, 2), new Point(bx, laneBottom));
+            context.FillRectangle(new SolidColorBrush(Color.FromArgb(28, 0xE8, 0xE8, 0xEC)), new Rect(bx - 3, 2, 6, laneBottom - 2));
+        }
+
+        // External library drag ghost: estimated append block at the boundary.
+        if (_externalDragId is not null && _dropIndex >= 0 && _externalGhostFrames > 0)
+        {
+            double bx = BoundaryX(_dropIndex);
+            double gw = Math.Max(8, _externalGhostFrames * ppf);
+            // Clamp inside the visible track; appending past the end still
+            // shows the block starting at the end boundary.
+            double gx = Math.Clamp(bx, OriginX, Math.Max(OriginX, fullWidth - 8));
+            gw = Math.Min(gw, Math.Max(8, fullWidth - gx - 2));
+            var ghost = new Rect(gx + 1, LaneTop + 1, Math.Max(7, gw - 2), ClipLaneHeight - 2);
+            context.FillRectangle(new SolidColorBrush(Color.FromArgb(70, 0xE8, 0xE8, 0xEC)), ghost);
+            context.DrawRectangle(InsertPen, ghost);
+        }
+
+        // Dragged-clip ghost: follow the cursor so the reorder target is
+        // visible instead of only a thin insertion line.
+        if (_dragging && _dragClipId is not null && clips is not null)
+        {
+            var dragged = clips.FirstOrDefault(c => c.ClipId == _dragClipId);
+            if (dragged is not null)
+            {
+                double gw = Math.Max(8, dragged.FrameCount * ppf);
+                double gx = Math.Clamp(_dragGhostX - gw / 2, OriginX, Math.Max(OriginX, fullWidth - gw));
+                var ghost = new Rect(gx, LaneTop + 1, gw, ClipLaneHeight - 2);
+                context.FillRectangle(new SolidColorBrush(Color.FromArgb(90, 0xE8, 0xE8, 0xEC)), ghost);
+                context.DrawRectangle(InsertPen, ghost);
+                DrawTrimmed(context, ClipLabel(dragged), gx + 4, LaneTop + 3, Math.Max(0, gw - 6));
+            }
         }
 
         // Playhead.
@@ -548,7 +584,7 @@ public sealed class SequenceTrackControl : Control
             }
             return (HitKind.None, null, default, 0);
         }
-        if (y >= LaneTop && Clips is not null)
+        if (y >= LaneTop && y < LaneTop + ClipLaneHeight && Clips is not null)
         {
             foreach (var c in Clips)
             {
@@ -610,6 +646,9 @@ public sealed class SequenceTrackControl : Control
         return Math.Clamp((int)Math.Floor((x - OriginX) / PixelsPerFrame), 0, total - 1);
     }
 
+    /// <summary>Unclamped output-frame under cursor for trim extension.</summary>
+    private int RawFrameAtX(double x) => (int)Math.Floor((x - OriginX) / PixelsPerFrame);
+
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     {
         base.OnPointerCaptureLost(e);
@@ -628,6 +667,9 @@ public sealed class SequenceTrackControl : Control
         _dragging = false;
         _pressArmed = false;
         _dropIndex = -1;
+        _dragGhostX = 0;
+        _externalDragId = null;
+        _externalGhostFrames = 0;
         _trimClipId = null;
         _rangeAnchor = -1;
         _rulerPress = false;
@@ -678,9 +720,19 @@ public sealed class SequenceTrackControl : Control
             FrameRangeSelected?.Invoke(a, Math.Min(b, Math.Max(1, TotalFrames)));
             return;
         }
+        if (_rulerPress)
+        {
+            // Ruler scrub: drag the playhead continuously. Click-without-drag
+            // still seeks once on release; live scrub makes the arrow follow.
+            SeekRequested?.Invoke(FrameAtX(pos.X));
+            return;
+        }
         if (_trimClipId is not null)
         {
-            Trimming?.Invoke(_trimClipId, _trimLeft, FrameAtX(pos.X));
+            // Unclamped so extending past the current start/end is possible.
+            // Shortening stays precise via the anchor map; extension is
+            // extrapolated in the host up to the full source range.
+            Trimming?.Invoke(_trimClipId, _trimLeft, RawFrameAtX(pos.X));
             return;
         }
         if (_dragKey is { } key)
@@ -696,6 +748,7 @@ public sealed class SequenceTrackControl : Control
         {
             _dropIndex = InsertIndexAt(pos.X);
             _dropX = BoundaryX(_dropIndex);
+            _dragGhostX = pos.X;
             InvalidateVisual();
             return;
         }
@@ -782,12 +835,22 @@ public sealed class SequenceTrackControl : Control
         ResetDragState();
     }
 
+    private string? _externalDragId;
+    private int _externalGhostFrames;
+
     private void OnDragOver(object? sender, DragEventArgs e)
     {
         if (e.Data.Contains(AssetDnD.Format))
         {
             e.DragEffects = DragDropEffects.Copy;
             _dropIndex = InsertIndexAt(e.GetPosition(this).X);
+            _externalDragId = e.Data.Get(AssetDnD.Format) as string;
+            _externalGhostFrames = 0;
+            if (!string.IsNullOrWhiteSpace(_externalDragId) && EstimateLibraryFrames is { } estimate)
+            {
+                try { _externalGhostFrames = Math.Max(1, estimate(_externalDragId)); }
+                catch { _externalGhostFrames = 0; }
+            }
             InvalidateVisual();
         }
         else
@@ -801,6 +864,8 @@ public sealed class SequenceTrackControl : Control
     {
         int index = _dropIndex >= 0 ? _dropIndex : InsertIndexAt(e.GetPosition(this).X);
         _dropIndex = -1;
+        _externalDragId = null;
+        _externalGhostFrames = 0;
         InvalidateVisual();
         if (e.Data.Get(AssetDnD.Format) is string id && !string.IsNullOrWhiteSpace(id))
             LibraryDrop?.Invoke(id, index);

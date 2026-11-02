@@ -231,11 +231,15 @@ public static class SequenceCompositor
                 cancellationToken.ThrowIfCancellationRequested();
                 int src = r.Map.SourceAt(k);
                 var native1 = native.Get(loader, r.Clip.AnimationId, src, project.Fps);
+                byte[] bodyRgba = native1.Rgba;
+                int rw = native1.Width, rh = native1.Height;
+                var composed = TryComposeWeapon(native, loader, r.Clip, src, project.Fps);
+                if (composed is not null) { bodyRgba = composed.Pixels; rw = composed.Width; rh = composed.Height; }
                 var transform = r.Clip.EvaluateAt(k);
                 using var surface = SKSurface.Create(new SKImageInfo(w, h, SKColorType.Rgba8888, SKAlphaType.Unpremul));
                 var canvas = surface.Canvas;
                 canvas.Clear(SKColors.Transparent);
-                DrawLayer(canvas, native1.Rgba, native1.Width, native1.Height, transform, w, h);
+                DrawLayer(canvas, bodyRgba, rw, rh, transform, w, h);
 
                 // Effect overlays in layer order.
                 foreach (var e in project.Effects.OrderBy(e => e.Layer).ThenBy(e => project.Effects.IndexOf(e)))
@@ -260,6 +264,67 @@ public static class SequenceCompositor
             }
         }
         return new RenderedSequence(w, h, frames);
+    }
+
+    /// <summary>
+    /// Apply a clip's weapon substitution to one native source frame. Returns
+    /// null when disabled or incomplete; missing donors fall back to the body
+    /// so preview/exports never crash on a half-authored override.
+    /// </summary>
+    internal static RgbaImage? TryComposeWeapon(NativeFrameCache native, AnimationLoader loader,
+        SequenceClip clip, int src, double fps)
+    {
+        var w = clip.Weapon;
+        if (w is null || !w.Enabled) return null;
+        if (string.IsNullOrWhiteSpace(w.DonorAnimationId)) return null;
+        ClipFrame body, donor;
+        try
+        {
+            body = native.Get(loader, clip.AnimationId, src, fps);
+            int donorCount = loader.Catalog.GetFrameRegions(w.DonorAnimationId).Count;
+            if (donorCount <= 0) return null;
+            donor = native.Get(loader, w.DonorAnimationId, Math.Clamp(w.DonorFrame, 0, donorCount - 1), fps);
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException || ex is ArgumentOutOfRangeException || ex is InvalidDataException)
+        {
+            return null;
+        }
+        var frame = w.ForSource(src);
+        IReadOnlyList<PixelRun> remove = frame?.Remove ?? new List<PixelRun>();
+        var pose = frame?.Pose ?? new WeaponPose(0, 0, 0);
+        if (w.BehindBody) pose = pose with { BehindBody = true };
+        else if (frame is not null && frame.Pose.BehindBody) { /* per-frame wins */ }
+        try
+        {
+            var bodyImg = new RgbaImage(body.Width, body.Height, (byte[])body.Rgba.Clone());
+            // Pad donor top-left to body canvas.
+            var padded = new RgbaImage(body.Width, body.Height, new byte[body.Width * body.Height * 4]);
+            int cw = Math.Min(donor.Width, body.Width), ch = Math.Min(donor.Height, body.Height);
+            for (int y = 0; y < ch; y++)
+                Array.Copy(donor.Rgba, (y * donor.Width) * 4, padded.Pixels, (y * body.Width) * 4, cw * 4);
+            var appearance = new RgbaImage(body.Width, body.Height, new byte[body.Width * body.Height * 4]);
+            if (w.DonorRegion.Count > 0)
+                WeaponComposition.Restore(appearance, padded, w.DonorRegion);
+            else
+                appearance = padded;
+            List<PixelRun>? foreground = null;
+            if (w.PreserveBody)
+            {
+                var opaque = WeaponPalette.OpaqueRuns(body.Rgba, body.Width, body.Height);
+                var removeSet = WeaponPalette.ToPoints(remove);
+                foreground = WeaponPalette.Subtract(opaque, removeSet);
+            }
+            else if (frame?.Foreground.Count > 0)
+            {
+                foreground = frame.Foreground;
+            }
+            return WeaponComposition.Compose(bodyImg, remove, appearance,
+                w.DonorPivotX, w.DonorPivotY, pose, foreground);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
     }
 
     private static void DrawLayer(SKCanvas canvas, byte[] rgba, int sw, int sh, Transform t, int canvasW, int canvasH)

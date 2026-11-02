@@ -212,6 +212,9 @@ public sealed partial class TimelineView : UserControl
     public void SetSequencePosition(int frameIndex, int frameCount) =>
         SetPosition(frameIndex, frameCount, SeqTrack.Fps);
 
+    /// <summary>Host-provided library size estimator for drop ghosts.</summary>
+    public void SetLibraryEstimator(Func<string, int>? estimator) => SeqTrack.EstimateLibraryFrames = estimator;
+
     /// <summary>Evidence/testing hook: direct timeline zoom control.</summary>
     public void SetZoomFactor(double zoom) => SetZoomValue(zoom);
 
@@ -232,6 +235,8 @@ public sealed partial class TimelineView : UserControl
         var active = IsSequenceMode ? (Control)SeqTrack : Track;
         double natural = IsSequenceMode ? SeqTrack.TrackWidth : Track.TrackWidth;
         active.Width = Math.Max(natural, TrackScroll.Bounds.Width);
+        if (TrackScroll.Offset.Y != 0)
+            TrackScroll.Offset = TrackScroll.Offset.WithY(0);
         active.InvalidateVisual();
     }
 
@@ -261,14 +266,20 @@ public sealed partial class TimelineView : UserControl
 
     private void OnWheel(object? sender, PointerWheelEventArgs e)
     {
-        // Ctrl+wheel zooms the timeline; plain wheel scrolls horizontally.
+        // Ctrl+wheel zooms the timeline; plain wheel scrolls horizontally so
+        // the ruler never scrolls vertically out of view.
         if ((e.KeyModifiers & KeyModifiers.Control) != 0)
         {
             _timelineUserZoomed = true;
             double step = e.Delta.Y > 0 ? 0.25 : -0.25;
             SetZoomValue(ZoomSlider.Value + step);
             e.Handled = true;
+            return;
         }
+        var offset = TrackScroll.Offset;
+        double dx = e.Delta.X != 0 ? e.Delta.X : e.Delta.Y;
+        TrackScroll.Offset = new Avalonia.Vector(Math.Max(0, offset.X - dx * 48), 0);
+        e.Handled = true;
     }
 
     private void UpdatePositionText(int frameIndex, int frameCount)

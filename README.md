@@ -10,9 +10,6 @@ pipeline: it reads the game's own `res.pak` directly (no extraction step, no
 bundled game art), decodes the binary **BATL** sprite atlas, and plays back
 verified hero animations such as the Katana strike chain.
 
-![AtkKatanaB2 contact sheet](docs/evidence/AtkKatanaB2-contact.png)
-![AtkKatanaB2 animation](docs/evidence/AtkKatanaB2.gif)
-
 ## Quick start
 
 Prerequisites:

@@ -80,7 +80,12 @@ public sealed partial class AssetBrowserView : UserControl
         if (!props.IsLeftButtonPressed)
             return;
         _dragStart = e.GetPosition((Control)sender!);
-        _dragId = (sender as ListBox)?.SelectedItem is AnimationListItem item ? item.Id : SelectedId;
+        // Use the item actually under the cursor, not the previous selection,
+        // so a single press-drag starts a drop without a separate click.
+        if ((e.Source as Avalonia.StyledElement)?.DataContext is AnimationListItem hit)
+            _dragId = hit.Id;
+        else
+            _dragId = (sender as ListBox)?.SelectedItem is AnimationListItem item ? item.Id : SelectedId;
     }
 
     private async void OnListPointerMoved(object? sender, PointerEventArgs e)

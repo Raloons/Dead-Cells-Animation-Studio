@@ -107,11 +107,11 @@
                       HorizontalAlignment="Center" Background="Transparent"
                       ResizeBehavior="PreviousAndNext"/>
 
-        <Grid Grid.Column="2" Margin="12,10,12,8">
+        <Grid Grid.Column="2" Margin="12,8,12,4">
           <DockPanel>
             <Border DockPanel.Dock="Bottom" Background="{StaticResource WsPanelBackground}"
                     BorderBrush="{StaticResource WsBorder}" BorderThickness="1" CornerRadius="4"
-                    Padding="8,6" Margin="0,8,0,0" HorizontalAlignment="Center">
+                    Padding="8,6" Margin="0,6,0,0" HorizontalAlignment="Center" VerticalAlignment="Bottom">
               <views:TransportControl x:Name="Transport"/>
             </Border>
             <views:AnimationViewportView x:Name="Viewport"/>

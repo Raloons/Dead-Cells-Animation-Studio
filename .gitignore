@@ -12,3 +12,7 @@ TestResults/
 *_n.png
 /extracted/
 /out/
+
+# Personal animation projects at the repo root stay local.
+# Shipped samples live under docs/evidence/ instead.
+/*.dcanim

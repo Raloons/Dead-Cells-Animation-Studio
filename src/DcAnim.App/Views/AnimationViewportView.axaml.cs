@@ -34,17 +34,27 @@ public sealed partial class AnimationViewportView : UserControl
 
     private void AutoFitOnFirstLayout()
     {
-        if (_userZoomed || _autoFitFrame <= 0 || Preview.Bounds.Width <= 0)
+        if (_userZoomed || _autoFitDone || _autoFitFrame <= 0 || Preview.Bounds.Width <= 0)
             return;
         FitToView(_autoFitFrame, _autoFitFrame);
+        _autoFitDone = true;
     }
 
     private int _autoFitFrame = -1;
+    private bool _autoFitDone;
 
     /// <summary>Notes the frame size for layout-driven auto-fit (until manual zoom).</summary>
-    public void NoteFrameSize(int frameWidthHeight) => _autoFitFrame = frameWidthHeight;
+    public void NoteFrameSize(int frameWidthHeight)
+    {
+        _autoFitFrame = frameWidthHeight;
+        _autoFitDone = false;
+    }
 
-    public void ResetUserZoom() => _userZoomed = false;
+    public void ResetUserZoom()
+    {
+        _userZoomed = false;
+        _autoFitDone = false;
+    }
 
     public void SetFrame(Bitmap? frame) => Preview.Frame = frame;
 
@@ -71,5 +81,6 @@ public sealed partial class AnimationViewportView : UserControl
         if (fit >= 1)
             SetZoom(Math.Min(fit, ZoomSlider.Maximum));
         _userZoomed = false; // programmatic fit never counts as a manual zoom
+        _autoFitDone = true;
     }
 }

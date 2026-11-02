@@ -63,6 +63,13 @@ public sealed class SequenceClip
     /// <summary>Ordered by (Property, Frame) for determinism.</summary>
     public List<TransformKeyframe> Keyframes { get; set; } = new();
 
+    /// <summary>
+    /// Optional weapon substitution: erase the source weapon pixels and compose
+    /// a donor weapon in their place. Null = disabled. Explicit runs/poses only;
+    /// the renderer never infers colors.
+    /// </summary>
+    public WeaponClipOverride? Weapon { get; set; }
+
     public Transform EvaluateAt(int localFrame) =>
         KeyframeEvaluator.EvaluateAll(Keyframes, localFrame, BaseTransform);
 }
@@ -114,12 +121,14 @@ public sealed class AudioClip
 /// <c>.dcanim</c> JSON (see <see cref="ProjectSerializer"/>).
 /// Format history: v1 = clips only (AS-M3); v2 adds transforms, keyframes,
 /// effect and audio tracks (AS-M4, backward-compatible load); v3 adds
-/// per-clip source trim, reverse and hold frames (AS-M4.2). Older versions
-/// load with documented defaults (full range, forward, no holds).
+/// per-clip source trim, reverse and hold frames (AS-M4.2). v4 adds optional
+/// per-clip weapon substitution (explicit runs/poses, backward-compatible load).
+/// Older versions load with documented defaults (full range, forward, no holds,
+/// no weapon override).
 /// </summary>
 public sealed class SequenceProject
 {
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     public int Version { get; set; } = CurrentVersion;
     public string Name { get; set; } = "Untitled";

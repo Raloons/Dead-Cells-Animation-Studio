@@ -382,6 +382,7 @@ public sealed class SequenceDocument
             TailHoldFrames = source.TailHoldFrames,
             BaseTransform = source.BaseTransform,
             Keyframes = source.Keyframes.Select(k => k with { }).ToList(),
+            Weapon = CloneWeapon(source.Weapon),
         };
         _project.Clips.Insert(i + 1, copy);
         _currentSnapshot = Snapshot(_project);
@@ -710,6 +711,7 @@ public sealed class SequenceDocument
                     TailHoldFrames = b == r.OutputFrames ? Math.Max(0, r.Clip.TailHoldFrames) : 0,
                     BaseTransform = r.Clip.BaseTransform,
                     Keyframes = new List<TransformKeyframe>(),
+                    Weapon = CloneWeapon(r.Clip.Weapon),
                 };
                 var pieceMap = MapFor(piece, sources);
                 var remapped = RemapSpan(r.Clip.Keyframes, r.Map, a, b - a, pieceMap);
@@ -903,6 +905,7 @@ public sealed class SequenceDocument
             TailHoldFrames = Math.Max(0, clip.TailHoldFrames),
             BaseTransform = clip.BaseTransform,
             Keyframes = new List<TransformKeyframe>(),
+            Weapon = CloneWeapon(clip.Weapon),
         };
         var rightMap = MapFor(right, sources);
 
@@ -1002,6 +1005,54 @@ public sealed class SequenceDocument
         clip.BaseTransform = transform ?? throw new ArgumentNullException(nameof(transform));
         _currentSnapshot = Snapshot(_project);
         Changed?.Invoke();
+    }
+
+    // ---------- weapon substitution ----------
+
+    public static WeaponClipOverride? CloneWeapon(WeaponClipOverride? source)
+    {
+        if (source is null) return null;
+        return new WeaponClipOverride
+        {
+            Enabled = source.Enabled,
+            DonorAnimationId = source.DonorAnimationId,
+            DonorFrame = source.DonorFrame,
+            DonorRegion = source.DonorRegion.Select(r => r with { }).ToList(),
+            DonorPivotX = source.DonorPivotX,
+            DonorPivotY = source.DonorPivotY,
+            BehindBody = source.BehindBody,
+            PreserveBody = source.PreserveBody,
+            BodyMaskGreen = source.BodyMaskGreen,
+            DonorMaskGreen = source.DonorMaskGreen,
+            NonBodyMode = source.NonBodyMode,
+            BodyColorGreen = source.BodyColorGreen,
+            Frames = source.Frames.Select(f => new WeaponFrameOverride
+            {
+                SourceFrame = f.SourceFrame,
+                Remove = f.Remove.Select(r => r with { }).ToList(),
+                Foreground = f.Foreground.Select(r => r with { }).ToList(),
+                Pose = f.Pose with { },
+            }).ToList(),
+        };
+    }
+
+    public void SetClipWeapon(string clipId, WeaponClipOverride? weapon)
+    {
+        var clip = FindClip(clipId);
+        Touch(weapon is null ? $"Clear weapon ({clip.AnimationId})" : $"Weapon ({clip.AnimationId})");
+        clip.Weapon = CloneWeapon(weapon);
+        _currentSnapshot = Snapshot(_project);
+        Changed?.Invoke();
+    }
+
+    public void SetWeaponPoseDirect(string clipId, int sourceFrame, WeaponPose pose)
+    {
+        var clip = FindClip(clipId);
+        var w = clip.Weapon ?? throw new InvalidOperationException("Clip has no weapon override.");
+        if (!double.IsFinite(pose.X) || !double.IsFinite(pose.Y) || !double.IsFinite(pose.Degrees) ||
+            !double.IsFinite(pose.ScaleX) || !double.IsFinite(pose.ScaleY) || pose.ScaleX == 0 || pose.ScaleY == 0)
+            throw new ArgumentOutOfRangeException(nameof(pose));
+        ApplyDirect(() => w.EnsureFrame(sourceFrame).Pose = pose);
     }
 
     private static void RequireFinite(Transform t, string what)

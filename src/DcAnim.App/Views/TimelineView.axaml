@@ -29,7 +29,7 @@
                     VerticalScrollBarVisibility="Auto" Padding="0">
         <Grid>
           <controls:TrackControl x:Name="Track" Height="92"/>
-          <controls:SequenceTrackControl x:Name="SeqTrack" Height="184" IsVisible="False"/>
+          <controls:SequenceTrackControl x:Name="SeqTrack" MinHeight="182" VerticalAlignment="Stretch" IsVisible="False"/>
         </Grid>
       </ScrollViewer>
     </Border>

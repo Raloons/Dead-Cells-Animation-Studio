@@ -78,6 +78,116 @@
         </StackPanel>
       </Expander>
 
+      <Expander x:Name="WeaponSection" IsExpanded="True" HorizontalAlignment="Stretch" IsVisible="False">
+        <Expander.Header>
+          <TextBlock Text="WEAPON" Classes="ws-panel-header" Margin="0"/>
+        </Expander.Header>
+        <StackPanel Spacing="4">
+          <CheckBox x:Name="WeaponEnabled" Content="Replace weapon in this clip"
+                    ToolTip.Tip="Erase the source weapon pixels and compose a donor weapon in their place"/>
+          <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Donor anim" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="4">
+              <TextBox x:Name="WeaponDonor" Width="130" Watermark="AtkKatanaB2"
+                       ToolTip.Tip="Native animation holding the replacement weapon"/>
+              <Button x:Name="WeaponPickButton" Classes="ws-tool" Content="Use library"
+                      ToolTip.Tip="Use the currently selected library animation as donor"/>
+            </StackPanel>
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Donor frame" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Row="1" Grid.Column="1" x:Name="WeaponDonorFrame" Minimum="0" Maximum="100000"
+                           FormatString="0" Width="110" HorizontalAlignment="Left"
+                           ToolTip.Tip="0-based source frame in the donor animation"/>
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Body band G" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Row="2" Grid.Column="1" x:Name="WeaponBodyGreen" Minimum="0" Maximum="255"
+                           FormatString="0" Width="110" HorizontalAlignment="Left"
+                           ToolTip.Tip="Palette green channel of the source weapon (e.g. 32 for pickaxe)"/>
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="Donor band G" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Row="3" Grid.Column="1" x:Name="WeaponDonorGreen" Minimum="0" Maximum="255"
+                           FormatString="0" Width="110" HorizontalAlignment="Left"
+                           ToolTip.Tip="Palette green channel of the donor weapon (e.g. 159 for katana)"/>
+            <TextBlock Grid.Row="4" Grid.Column="0" Text="Detect" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+              <CheckBox x:Name="WeaponNonBody" Content="Non-body is weapon"
+                        ToolTip.Tip="Treat anything that isn't body color as weapon — use for shovels and other bands"/>
+              <NumericUpDown x:Name="WeaponBodyColor" Minimum="0" Maximum="255"
+                             FormatString="0" Width="70" HorizontalAlignment="Left"
+                             ToolTip.Tip="Body green channel to exclude (default 96)"/>
+            </StackPanel>
+            <TextBlock Grid.Row="5" Grid.Column="0" Text="Layer" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <StackPanel Grid.Row="5" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+              <CheckBox x:Name="WeaponBehind" Content="Behind body"
+                        ToolTip.Tip="Draw the weapon under the body instead of in front"/>
+              <CheckBox x:Name="WeaponPreserve" Content="Body over weapon" IsChecked="True"
+                        ToolTip.Tip="Keep visible body pixels above the weapon (hands occlude the blade)"/>
+            </StackPanel>
+          </Grid>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Button x:Name="WeaponAutoButton" Classes="ws-tool" Content="Auto-detect"
+                    ToolTip.Tip="Detect weapon pixels by palette band and estimate per-frame poses"/>
+            <Button x:Name="WeaponClearButton" Classes="ws-tool" Content="Clear"
+                    ToolTip.Tip="Remove the weapon override from this clip"/>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Button x:Name="WeaponImportButton" Classes="ws-tool" Content="Import plan…"
+                    ToolTip.Tip="Load a BTD-compatible weapon plan JSON"/>
+            <Button x:Name="WeaponExportButton" Classes="ws-tool" Content="Export plan…"
+                    ToolTip.Tip="Save a BTD-compatible weapon plan JSON"/>
+          </StackPanel>
+          <TextBlock Text="DONOR GALLERY — hover to preview" Classes="ws-panel-header" Margin="0,6,0,0"/>
+          <TextBox x:Name="WeaponGallerySearch" Watermark="Filter weapons…"
+                   ToolTip.Tip="Filter the weapon gallery by animation ID"/>
+          <ListBox x:Name="WeaponGallery" Background="Transparent" Padding="0" Margin="0,4,0,0"
+                   MaxHeight="220" SelectionMode="Single"
+                   ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                   ToolTip.Tip="Hover a weapon to preview it on the current frame — click to choose it as donor">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="48,*" Margin="0,1">
+                  <Border Grid.Column="0" Width="44" Height="44" CornerRadius="3"
+                          Background="#101014" BorderBrush="{StaticResource WsBorder}" BorderThickness="1">
+                    <Image Source="{Binding Thumbnail}" Stretch="Uniform" Margin="2"
+                           RenderOptions.BitmapInterpolationMode="None"/>
+                  </Border>
+                  <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,0,0">
+                    <TextBlock Text="{Binding Id}" FontSize="12" Foreground="{StaticResource WsTextPrimary}"/>
+                    <TextBlock Text="{Binding Meta}" FontSize="11" Foreground="{StaticResource WsTextMuted}"/>
+                  </StackPanel>
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <TextBlock x:Name="WeaponStatus" Classes="ws-prop-value" FontSize="11" Text="—" TextWrapping="Wrap"/>
+          <TextBlock Text="POSE (per source frame)" Classes="ws-panel-header" Margin="0,6,0,0"/>
+          <TextBlock x:Name="WeaponFrameLabel" Classes="ws-prop-value" Text="—"/>
+          <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="X" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Row="0" Grid.Column="1" x:Name="WeaponX" Minimum="-2000" Maximum="2000" Increment="0.5" FormatString="0.##" Width="110" HorizontalAlignment="Left"/>
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Y" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Row="1" Grid.Column="1" x:Name="WeaponY" Minimum="-2000" Maximum="2000" Increment="0.5" FormatString="0.##" Width="110" HorizontalAlignment="Left"/>
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Rotation°" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Row="2" Grid.Column="1" x:Name="WeaponRot" Minimum="-360" Maximum="360" Increment="1" FormatString="0.##" Width="110" HorizontalAlignment="Left"/>
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="Scale X" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Row="3" Grid.Column="1" x:Name="WeaponSx" Minimum="0.1" Maximum="8" Increment="0.1" FormatString="0.##" Width="110" HorizontalAlignment="Left"/>
+            <TextBlock Grid.Row="4" Grid.Column="0" Text="Scale Y" Classes="ws-prop-label" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Row="4" Grid.Column="1" x:Name="WeaponSy" Minimum="0.1" Maximum="8" Increment="0.1" FormatString="0.##" Width="110" HorizontalAlignment="Left"/>
+          </Grid>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Button x:Name="WeaponPrevButton" Classes="ws-tool" Content="◀ Prev"
+                    ToolTip.Tip="Previous weapon frame"/>
+            <Button x:Name="WeaponNextButton" Classes="ws-tool" Content="Next ▶"
+                    ToolTip.Tip="Next weapon frame"/>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Button x:Name="WeaponFlipButton" Classes="ws-tool" Content="Flip 180°"
+                    ToolTip.Tip="Rotate this frame's weapon 180° around its grip — fixes blade-in-hand cases"/>
+            <Button x:Name="WeaponFlipAllButton" Classes="ws-tool" Content="Flip all 180°"
+                    ToolTip.Tip="Rotate every posed frame 180° around its own grip"/>
+          </StackPanel>
+          <CheckBox x:Name="WeaponMoveCheck" Content="Drag moves weapon (not clip)"
+                    ToolTip.Tip="Viewport drag adjusts the weapon pose for the current source frame"/>
+        </StackPanel>
+      </Expander>
+
       <Expander x:Name="EffectSection" IsExpanded="True" HorizontalAlignment="Stretch" IsVisible="False">
         <Expander.Header>
           <TextBlock Text="EFFECT" Classes="ws-panel-header" Margin="0"/>
