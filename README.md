@@ -6,9 +6,9 @@ genuine **Dead Cells** hero animations outside the game.
 ![Running application](docs/evidence/app-mainwindow.png)
 
 AS-M1 (this milestone) delivers a launchable app with a real native animation
-pipeline: it reads the game's own `res.pak` directly (no extraction step, no
-bundled game art), decodes the binary **BATL** sprite atlas, and plays back
-verified hero animations such as the Katana strike chain.
+pipeline: it reads the game's own `res.pak` directly (no extraction step),
+decodes the binary **BATL** sprite atlas, and plays back verified hero
+animations such as the Katana strike chain.
 
 ## Quick start
 
@@ -16,8 +16,11 @@ Prerequisites:
 
 - Windows 10/11 (x64)
 - [.NET 10 SDK](https://dotnet.microsoft.com/download) (build only)
-- A legally obtained Dead Cells installation (Steam) — the app auto-detects
-  `res.pak` and only ever opens it read-only
+
+A Dead Cells installation is **optional**. The default Beheaded animation set
+is bundled under `bundled/beheaded/`, so the editor runs standalone. If a local
+Steam install is present the app prefers it automatically, which also unlocks
+every outfit and any game version you own.
 
 ```powershell
 # from the repository root
@@ -30,11 +33,20 @@ Or explicitly:
 dotnet run --project src/DcAnim.App -c Release
 ```
 
-On startup the app locates `res.pak` (Steam registry + `libraryfolders.vdf` +
-common paths, no hardcoded usernames). If nothing is found, use
-**File > Open res.pak…** or **File > Open extracted atlas folder…**
+On startup the app looks for `res.pak` (Steam registry + `libraryfolders.vdf` +
+common paths, no hardcoded usernames) and falls back to the bundled set. You can
+always use **File > Open res.pak…** or **File > Open extracted atlas folder…**
 (a folder containing `beheaded.atlas` plus its page PNGs, as produced by the
 official `AtlasTool -Expand`).
+
+### Bundled game assets
+
+`bundled/beheaded/` contains the default-outfit `beheaded.atlas` and its three
+page PNGs, extracted unmodified from Dead Cells v35. These assets are
+**© Motion Twin / Evil Empire** and are included here **with the developers'
+permission**. They are *not* covered by this repository's MIT license, which
+applies only to the application source. Outfit-specific atlas sets are not
+bundled — load your own `res.pak` to access them.
 
 Evidence capture (used for the screenshots above):
 

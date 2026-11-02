@@ -27,6 +27,11 @@
 
   <ItemGroup>
     <None Include="data\timing-overrides.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Bundled default-outfit atlas so the editor runs without a game install.
+         Assets © Motion Twin / Evil Empire; included with permission (README). -->
+    <None Include="..\..\bundled\beheaded\*"
+          Link="bundled\beheaded\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

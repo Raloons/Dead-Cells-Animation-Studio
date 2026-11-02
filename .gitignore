@@ -13,6 +13,10 @@ TestResults/
 /extracted/
 /out/
 
+# Exception: the bundled default-outfit atlas set is intentionally shipped
+# (assets © Motion Twin / Evil Empire, included with permission — see README).
+!/bundled/beheaded/*.atlas
+
 # Personal animation projects at the repo root stay local.
 # Shipped samples live under docs/evidence/ instead.
 /*.dcanim

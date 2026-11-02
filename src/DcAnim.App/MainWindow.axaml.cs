@@ -373,6 +373,14 @@ public sealed partial class MainWindow : Window
                 LoadFromResPak(resPak);
                 return;
             }
+            // No game install: use the bundled default-outfit atlas shipped
+            // with the app, so the editor works without Steam.
+            string? bundled = GameSourceLocator.FindBundledAtlasDirectory();
+            if (bundled is not null)
+            {
+                LoadFromDirectory(bundled);
+                return;
+            }
             // Contextual feedback lives in the library's empty state.
             Browser.Clear();
         }

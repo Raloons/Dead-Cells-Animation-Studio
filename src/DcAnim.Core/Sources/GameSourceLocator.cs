@@ -10,6 +10,33 @@ public static class GameSourceLocator
 {
     public const string ResPakFileName = "res.pak";
 
+    /// <summary>
+    /// Default-outfit atlas set shipped with the app (assets © Motion Twin /
+    /// Evil Empire, included with permission; see README). Lets the editor run
+    /// without a local Steam install.
+    /// </summary>
+    public static string? FindBundledAtlasDirectory()
+    {
+        foreach (var root in BundledRoots())
+        {
+            if (File.Exists(Path.Combine(root, "beheaded.atlas")))
+                return root;
+        }
+        return null;
+    }
+
+    private static IEnumerable<string> BundledRoots()
+    {
+        // Shipped beside the executable and, for `dotnet run`, up the tree.
+        string? baseDir = AppContext.BaseDirectory;
+        if (baseDir != null)
+        {
+            yield return Path.Combine(baseDir, "bundled", "beheaded");
+            for (var dir = new DirectoryInfo(baseDir); dir is not null; dir = dir.Parent)
+                yield return Path.Combine(dir.FullName, "bundled", "beheaded");
+        }
+    }
+
     public static string? FindGameDirectory()
     {
         foreach (var dir in CandidateGameDirectories())

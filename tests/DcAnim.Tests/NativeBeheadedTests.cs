@@ -85,6 +85,30 @@ public sealed class NativeBeheadedTests
     }
 
     [Fact]
+    public void BundledAtlas_IsCompleteAndParseable()
+    {
+        // Shipped default-outfit assets (used with permission; see README).
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "DeadCells.AnimationStudio.slnx")))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+        string atlasPath = Path.Combine(dir!.FullName, "bundled", "beheaded", "beheaded.atlas");
+        Assert.True(File.Exists(atlasPath), "bundled atlas missing: " + atlasPath);
+
+        var atlas = BatlParser.ParseFile(atlasPath);
+        Assert.Equal(3, atlas.Pages.Count);
+        Assert.Equal(10234, atlas.Regions.Count);
+        Assert.Equal(0, atlas.DroppedTrailingRegions);
+        foreach (var page in atlas.Pages)
+            Assert.True(File.Exists(Path.Combine(dir.FullName, "bundled", "beheaded", page)), "missing page: " + page);
+
+        using var loader = AnimationLoader.FromDirectory(Path.Combine(dir.FullName, "bundled", "beheaded"));
+        var clip = loader.LoadClip("AtkKatanaB2");
+        Assert.Equal(11, clip.FrameCount);
+        Assert.All(clip.Frames, f => Assert.True(f.Rgba.Any(b => b != 0), "blank bundled frame"));
+    }
+
+    [Fact]
     public void ResPak_ContainsBeheadedAtlas()
     {
         SkipUnlessAvailable(out var resPak);
