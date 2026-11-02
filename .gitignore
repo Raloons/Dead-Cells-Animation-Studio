@@ -6,6 +6,10 @@ TestResults/
 *.suo
 .DS_Store
 
+# Local single-file publish output and audit/export scratch folders.
+/publish/
+/demo/
+
 # Never commit game or mod archives/resources.
 *.pak
 *.atlas

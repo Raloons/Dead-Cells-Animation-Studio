@@ -125,9 +125,13 @@ public sealed class AnimationLoader : IDisposable
     }
 
     /// <summary>Loads a small hand-authored timing overlay (animId → hitFrame/charge/...). No game art involved.</summary>
-    public static IReadOnlyDictionary<string, AnimationTiming> LoadTimingOverlay(string jsonPath)
+    public static IReadOnlyDictionary<string, AnimationTiming> LoadTimingOverlay(string jsonPath) =>
+        ParseTimingOverlay(File.ReadAllText(jsonPath));
+
+    /// <summary>Parses the timing overlay from JSON text (also used for embedded copies).</summary>
+    public static IReadOnlyDictionary<string, AnimationTiming> ParseTimingOverlay(string json)
     {
-        var doc = JsonDocument.Parse(File.ReadAllText(jsonPath));
+        var doc = JsonDocument.Parse(json);
         var map = new Dictionary<string, AnimationTiming>(StringComparer.Ordinal);
         foreach (var prop in doc.RootElement.EnumerateObject())
         {

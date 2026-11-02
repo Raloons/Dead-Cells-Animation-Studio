@@ -367,15 +367,23 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            string? resPak = GameSourceLocator.FindResPak();
-            if (resPak is not null)
+            // --bundled: skip game detection and use the shipped default-outfit
+            // set (useful when a game install exists but you want the bundled one).
+            bool forceBundled = Environment.GetCommandLineArgs()
+                .Any(a => string.Equals(a, "--bundled", StringComparison.OrdinalIgnoreCase));
+            if (!forceBundled)
             {
-                LoadFromResPak(resPak);
-                return;
+                string? resPak = GameSourceLocator.FindResPak();
+                if (resPak is not null)
+                {
+                    LoadFromResPak(resPak);
+                    return;
+                }
             }
             // No game install: use the bundled default-outfit atlas shipped
-            // with the app, so the editor works without Steam.
-            string? bundled = GameSourceLocator.FindBundledAtlasDirectory();
+            // with the app, so the editor works without Steam. In a single-file
+            // build this extracts the embedded copy on first run.
+            string? bundled = BundledAssets.EnsureAvailable();
             if (bundled is not null)
             {
                 LoadFromDirectory(bundled);
@@ -395,7 +403,15 @@ public sealed partial class MainWindow : Window
         try
         {
             string path = Path.Combine(AppContext.BaseDirectory, "data", "timing-overrides.json");
-            return File.Exists(path) ? AnimationLoader.LoadTimingOverlay(path) : null;
+            if (File.Exists(path))
+                return AnimationLoader.LoadTimingOverlay(path);
+            // Single-file build: read the embedded copy instead of a loose file.
+            using var stream = typeof(MainWindow).Assembly
+                .GetManifestResourceStream("Data.timing-overrides.json");
+            if (stream is null)
+                return null;
+            using var reader = new StreamReader(stream);
+            return AnimationLoader.ParseTimingOverlay(reader.ReadToEnd());
         }
         catch
         {

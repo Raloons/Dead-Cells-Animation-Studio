@@ -21,7 +21,14 @@ animations such as the Katana strike chain.
 
 ## Quick start
 
-Prerequisites:
+**Easiest:** download the single-file `DeadCells.AnimationStudio.exe` from the
+[Releases page](https://github.com/Raloons/Dead-Cells-Animation-Studio/releases)
+and double-click it — no installer, no .NET runtime, no game files required.
+
+Full download, build and troubleshooting instructions:
+**[INSTALL.md](INSTALL.md)**
+
+Prerequisites for building from source:
 
 - Windows 10/11 (x64)
 - [.NET 10 SDK](https://dotnet.microsoft.com/download) (build only)
@@ -36,10 +43,10 @@ every outfit and any game version you own.
 .\scripts\run.cmd
 ```
 
-Or explicitly:
+To produce a portable single-file executable:
 
 ```powershell
-dotnet run --project src/DcAnim.App -c Release
+.\scripts\publish.cmd
 ```
 
 On startup the app looks for `res.pak` (Steam registry + `libraryfolders.vdf` +

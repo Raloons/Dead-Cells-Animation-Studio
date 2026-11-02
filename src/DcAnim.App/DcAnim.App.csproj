@@ -26,12 +26,19 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="data\timing-overrides.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="data\timing-overrides.json" CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="Never" />
+    <EmbeddedResource Include="data\timing-overrides.json" LogicalName="Data.timing-overrides.json" />
     <!-- Bundled default-outfit atlas so the editor runs without a game install.
-         Assets © Motion Twin / Evil Empire; included with permission (README). -->
+         Embedded for single-file publishing; loose copies are for local dev only.
+         Assets are third-party (Motion Twin / Evil Empire) and not MIT-licensed;
+         see the Disclaimer & Copyright Notice in README.md. -->
     <None Include="..\..\bundled\beheaded\*"
           Link="bundled\beheaded\%(Filename)%(Extension)"
-          CopyToOutputDirectory="PreserveNewest" />
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="Never" />
+    <EmbeddedResource Include="..\..\bundled\beheaded\*"
+                      LogicalName="Bundled.%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>
